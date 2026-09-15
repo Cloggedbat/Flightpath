@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.FlightPath" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#12241A</item>
+        <item name="android:statusBarColor">#12241A</item>
+        <item name="android:navigationBarColor">#12241A</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,30 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/build.log
+android/.idea/
+*.iml
+
+# signing key: NEVER commit. Keep flightpath-signing-key.zip somewhere safe.
+android/keystore/*
+!android/keystore/signing.properties.example
+
+# built apps live in GitHub Releases / the update server, not in git
+*.apk
+*.apk.part*
+*.aab
+
+# update server payload (the APK is uploaded at deploy time)
+updates/public/FlightPath.apk
+
+# scratch
+*.log
+.DS_Store

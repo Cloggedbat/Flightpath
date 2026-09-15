@@ -1,0 +1,5 @@
+# Copy to signing.properties (git-ignored) and fill in. Never commit the real one.
+storeFile=flightpath.jks
+storePassword=CHANGE_ME
+keyAlias=flightpath
+keyPassword=CHANGE_ME

@@ -1,0 +1,504 @@
+"""Background shot pipeline.
+
+Two modes, switchable at runtime:
+
+  queue  - keep hitting. New clips are pulled and processed in the background
+           and results appear when they are ready. Never blocks you. This is
+           OpenFlight's queue-and-sync pattern applied to file transfer.
+
+  focus  - one shot at a time. The app waits for the clip, processes it, and
+           shows the number before accepting the next. Paces your session, but
+           you get the answer while the swing is still fresh.
+
+The worker owns all camera and disk access. The web layer only reads snapshots
+of its state, so nothing blocks the UI thread.
+"""
+
+from __future__ import annotations
+
+import os
+import threading
+import time
+import traceback
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+
+import json
+
+import cv2
+
+from . import calibrate, cameras, detect, gopro, lens
+from .session import Session, Shot
+
+CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
+
+
+@dataclass
+class Settings:
+    camera_profile: str = "hero9-1080p240"
+    ref_px: tuple[float, float, float, float] | None = None
+    ref_inches: float = 46.0
+    lens_model_path: str | None = None
+    club: str = "7i"
+    mode: str = "queue"                  # queue | focus
+    clip_dir: str = "clips"
+    session_path: str = "session.json"
+    poll_seconds: float = 3.0
+    assumed_mb_per_s: float = 3.0
+    config_path: str = "config.json"
+
+    def load(self) -> None:
+        """Pull saved calibration and preferences back in.
+
+        Without this, calibration dies with the process and every restart
+        means re-tapping the club. That is the kind of friction that stops a
+        tool getting used.
+        """
+        try:
+            with open(self.config_path) as fh:
+                raw = json.load(fh)
+        except (OSError, ValueError):
+            return
+        if isinstance(raw.get("ref_px"), list) and len(raw["ref_px"]) == 4:
+            try:
+                self.ref_px = tuple(float(v) for v in raw["ref_px"])
+            except (TypeError, ValueError):
+                pass
+        for key in ("ref_inches",):
+            if isinstance(raw.get(key), (int, float)) and raw[key] > 0:
+                setattr(self, key, float(raw[key]))
+        for key in ("club", "mode", "camera_profile"):
+            if isinstance(raw.get(key), str) and raw[key]:
+                setattr(self, key, raw[key][:32])
+        if self.mode not in ("queue", "focus"):
+            self.mode = "queue"
+
+    def save(self) -> None:
+        data = {k: getattr(self, k) for k in CONFIG_KEYS}
+        if data["ref_px"] is not None:
+            data["ref_px"] = list(data["ref_px"])
+        tmp = self.config_path + ".tmp"
+        try:
+            with open(tmp, "w") as fh:
+                json.dump(data, fh, indent=2)
+            os.replace(tmp, self.config_path)
+        except OSError:
+            pass
+
+    def scale(self):
+        if not self.ref_px:
+            return None
+        return calibrate.scale_from_reference(*self.ref_px, self.ref_inches)
+
+
+@dataclass
+class QueueEntry:
+    name: str
+    size: int
+    stage: str = "waiting"               # waiting | downloading | analysing | done | failed
+    progress: float = 0.0
+    eta_s: float = 0.0
+    message: str = ""
+    club: str = ""
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+class Worker:
+    def __init__(self, settings: Settings, client: gopro.GoProClient | None = None):
+        self.settings = settings
+        self.settings.load()
+        self.client = client or gopro.GoProClient()
+        self.session = Session()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+        self.queue: list[QueueEntry] = []
+        self.seen: set[str] = set()
+        self.camera_ok = False
+        self.camera_note = "not connected"
+        self.last_error = ""
+        self.recording = False
+        self._lens_model = None
+        self._trigger_lock = threading.Lock()
+        self.ref_frame_jpeg: bytes | None = None
+        self.ref_frame_size: tuple[int, int] = (0, 0)
+        self.calib_stage = "idle"      # idle | recording | fetching | ready | failed
+        self.calib_message = ""
+        self.camera_settings: dict = {}
+        self.camera_configured = False
+        self._misses = 0                 # consecutive failed polls
+
+        if os.path.exists(settings.session_path):
+            try:
+                self.session = Session.load(settings.session_path)
+            except Exception:                              # noqa: BLE001
+                pass
+
+    # ---------- lifecycle ----------
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    # ---------- public API used by the web layer ----------
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            shots = [asdict(s) for s in self.session.shots[-40:]]
+            return {
+                "camera_ok": self.camera_ok,
+                "camera_note": self.camera_note,
+                "recording": self.recording,
+                "mode": self.settings.mode,
+                "club": self.settings.club,
+                "calibrated": self.settings.ref_px is not None,
+                "ref_inches": self.settings.ref_inches,
+                "calib_stage": self.calib_stage,
+                "calib_message": self.calib_message,
+                "has_ref_frame": self.ref_frame_jpeg is not None,
+                "camera_settings": {k: v for k, v in self.camera_settings.items() if k != "raw"},
+                "camera_configured": self.camera_configured,
+                "ref_frame_w": self.ref_frame_size[0],
+                "ref_frame_h": self.ref_frame_size[1],
+                "queue": [q.as_dict() for q in self.queue[-12:]],
+                "queue_depth": sum(
+                    1 for q in self.queue if q.stage in ("waiting", "downloading", "analysing")
+                ),
+                "shots": list(reversed(shots)),
+                "shot_count": len(self.session.shots),
+                "club_summary": self.session.club_summary(),
+                "last_error": self.last_error,
+            }
+
+    def set_mode(self, mode: str) -> None:
+        if mode in ("queue", "focus"):
+            with self._lock:
+                self.settings.mode = mode
+                self.settings.save()
+
+    def set_club(self, club: str) -> None:
+        with self._lock:
+            self.settings.club = club.strip() or "unknown"
+            self.settings.save()
+
+    def set_reference(self, x1, y1, x2, y2, inches) -> None:
+        with self._lock:
+            self.settings.ref_px = (float(x1), float(y1), float(x2), float(y2))
+            self.settings.ref_inches = float(inches)
+            # Clear any stale "not calibrated" complaint so the UI does not keep
+            # showing an error the user just fixed.
+            if "not calibrated" in self.last_error:
+                self.last_error = ""
+            self.settings.save()
+
+    def begin_trigger(self) -> bool:
+        """Claim the shutter. False when one is already in flight.
+
+        Without this, repeated triggers stack threads and race on the camera's
+        shutter, which can leave it recording until the card fills.
+        """
+        if not self._trigger_lock.acquire(blocking=False):
+            return False
+        with self._lock:
+            self.recording = True
+        return True
+
+    def trigger(self, seconds: float = 3.0) -> str:
+        """Manual shutter. Call begin_trigger() first to claim it."""
+        seconds = max(0.2, min(float(seconds), 15.0))
+        try:
+            self.client.start_recording()
+            time.sleep(seconds)
+            self.client.stop_recording()
+            return "recorded"
+        except Exception as exc:                           # noqa: BLE001
+            with self._lock:
+                self.last_error = f"trigger failed: {exc}"
+            return str(exc)
+        finally:
+            with self._lock:
+                self.recording = False
+            try:
+                self._trigger_lock.release()
+            except RuntimeError:
+                pass
+
+    # ---------- calibration ----------
+
+    def capture_reference_frame(self, seconds: float = 2.0) -> None:
+        """Record a short clip and keep one frame for tap-to-calibrate.
+
+        Typing pixel coordinates by hand is the worst part of the setup and the
+        main reason this is not yet something you could hand to a stranger.
+        Tapping two points on a picture is the same measurement without the
+        arithmetic.
+        """
+        def stage(name, msg=""):
+            with self._lock:
+                self.calib_stage = name
+                self.calib_message = msg
+
+        try:
+            stage("recording")
+            before = {i.path for i in self.client.media_list()}
+            if self.begin_trigger():
+                self.trigger(seconds)
+            else:
+                stage("failed", "camera is busy")
+                return
+
+            stage("fetching")
+            item = None
+            for _ in range(15):
+                time.sleep(1.0)
+                fresh = [i for i in self.client.media_list()
+                         if i.is_main_video and i.path not in before]
+                if fresh:
+                    item = sorted(fresh, key=lambda i: i.mtime)[-1]
+                    break
+            if item is None:
+                stage("failed", "camera produced no clip")
+                return
+
+            path = self.client.download(item, self.settings.clip_dir)
+            self.seen.add(item.path)
+
+            cap = cv2.VideoCapture(path)
+            ok, frame = cap.read()
+            cap.release()
+            if not ok:
+                stage("failed", "could not decode the clip")
+                return
+
+            if self.settings.lens_model_path:
+                if self._lens_model is None:
+                    self._lens_model = lens.LensModel.load(self.settings.lens_model_path)
+                frame = lens.undistort_frames([frame], self._lens_model)[0]
+
+            h, w = frame.shape[:2]
+            ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+            if not ok:
+                stage("failed", "could not encode the frame")
+                return
+
+            with self._lock:
+                self.ref_frame_jpeg = buf.tobytes()
+                self.ref_frame_size = (w, h)
+                self.calib_stage = "ready"
+                self.calib_message = f"{w}x{h}"
+        except Exception as exc:                           # noqa: BLE001
+            stage("failed", f"{type(exc).__name__}: {exc}")
+
+    def configure_camera(self) -> dict:
+        """Put the camera into 1080p240 Linear so the user does not have to."""
+        try:
+            result = self.client.configure_for_launch_monitor(
+                fps=int(cameras.get(self.settings.camera_profile).fps)
+            )
+        except Exception as exc:                           # noqa: BLE001
+            result = {"ok": False, "settings": {},
+                      "problems": [f"{type(exc).__name__}: {exc}"]}
+        with self._lock:
+            self.camera_settings = result.get("settings", {})
+            self.camera_configured = bool(result.get("ok"))
+        return result
+
+    def refresh_camera_settings(self) -> dict:
+        got = self.client.read_settings()
+        with self._lock:
+            self.camera_settings = got
+            raw = got.get("raw", {})
+            self.camera_configured = (
+                raw.get("res") == gopro.RESOLUTION_1080
+                and raw.get("fps") in (gopro.FPS_240, gopro.FPS_120)
+                and raw.get("lens") in (gopro.LENS_LINEAR, gopro.LENS_LINEAR_HORIZON)
+            )
+        return got
+
+    def clear_session(self) -> None:
+        with self._lock:
+            self.session = Session()
+            self._save()
+
+    # ---------- the loop ----------
+
+    def _run(self) -> None:
+        self._connect()
+        while not self._stop.is_set():
+            try:
+                self._tick()
+            except Exception as exc:                       # noqa: BLE001
+                with self._lock:
+                    self.last_error = f"{type(exc).__name__}: {exc}"
+            self._stop.wait(self.settings.poll_seconds)
+
+    def connect_now(self) -> dict:
+        """User pressed Connect. Probe quickly and report, do not make them wait
+        for the background loop's next tick."""
+        self._connect(timeout=2.0)
+        with self._lock:
+            return {
+                "camera_ok": self.camera_ok,
+                "camera_note": self.camera_note,
+                "camera_settings": {k: v for k, v in self.camera_settings.items() if k != "raw"},
+            }
+
+    def _connect(self, timeout: float = 4.0) -> None:
+        res = self.client.probe(timeout=timeout)
+        with self._lock:
+            self.camera_ok = res.reachable
+            self.camera_note = (
+                f"connected ({res.firmware})" if res.reachable and res.firmware
+                else "connected" if res.reachable
+                else "no camera at 10.5.5.9"
+            )
+        if res.reachable:
+            try:
+                # Baseline: everything already on the card is old news.
+                for item in self.client.media_list():
+                    self.seen.add(item.path)
+            except Exception:                              # noqa: BLE001
+                pass
+            try:
+                self.refresh_camera_settings()
+            except Exception:                              # noqa: BLE001
+                pass
+
+    def _tick(self) -> None:
+        if not self.camera_ok:
+            self._connect()
+            return
+
+        self.client.keep_alive()
+        try:
+            items = self.client.media_list()
+            self._misses = 0
+        except Exception as exc:                           # noqa: BLE001
+            # One failed poll is not a lost camera. The HERO9 answers slowly or
+            # with an error while it is busy (just after a recording, or when
+            # the GoPro Quik app is also talking to it). Three in a row is.
+            self._misses += 1
+            with self._lock:
+                self.last_error = (
+                    f"camera poll {self._misses}/3 failed: {type(exc).__name__}: {exc}"
+                )
+                if self._misses >= 3:
+                    self.camera_ok = False
+                    self.camera_note = f"lost camera: {type(exc).__name__}"
+                else:
+                    self.camera_note = f"connected, camera busy ({self._misses}/3)"
+            return
+
+        with self._lock:
+            if self.last_error.startswith("camera poll"):
+                self.last_error = ""
+            if self.camera_note.startswith("connected, camera busy"):
+                self.camera_note = "connected"
+        fresh = [i for i in items if i.is_main_video and i.path not in self.seen]
+        fresh.sort(key=lambda i: i.mtime)
+
+        if self.settings.mode == "focus":
+            fresh = fresh[:1]
+
+        for item in fresh:
+            if self._stop.is_set():
+                return
+            self.seen.add(item.path)
+            self._process(item)
+
+    def _process(self, item: gopro.MediaItem) -> None:
+        entry = QueueEntry(
+            name=item.name,
+            size=item.size,
+            eta_s=gopro.transfer_estimate_s(item.size, self.settings.assumed_mb_per_s),
+            club=self.settings.club,
+        )
+        with self._lock:
+            self.queue.append(entry)
+
+        def on_progress(got, total, elapsed):
+            with self._lock:
+                entry.progress = got / total if total else 0.0
+                if elapsed > 1 and got:
+                    rate = got / elapsed
+                    entry.eta_s = max(0.0, (total - got) / rate)
+
+        try:
+            with self._lock:
+                entry.stage = "downloading"
+            path = self.client.download(item, self.settings.clip_dir, on_progress)
+        except Exception as exc:                           # noqa: BLE001
+            with self._lock:
+                entry.stage = "failed"
+                entry.message = f"download failed: {type(exc).__name__}"
+                self.last_error = entry.message
+            return
+
+        with self._lock:
+            entry.stage = "analysing"
+            entry.progress = 1.0
+            entry.eta_s = 0.0
+
+        try:
+            shot = self._analyse(path, entry.club)
+        except Exception as exc:                           # noqa: BLE001
+            with self._lock:
+                entry.stage = "failed"
+                entry.message = f"{type(exc).__name__}: {exc}"
+                self.last_error = entry.message + "\n" + traceback.format_exc(limit=2)
+            return
+
+        with self._lock:
+            if shot is None:
+                entry.stage = "failed"
+                entry.message = "no ball track found"
+            else:
+                entry.stage = "done"
+                entry.message = f"{shot.ball_speed_mph:.1f} mph"
+                self.session.add(shot)
+                self._save()
+
+    def _analyse(self, path: str, club: str) -> Shot | None:
+        scale = self.settings.scale()
+        if scale is None:
+            raise RuntimeError(
+                "not calibrated: set the reference object before hitting"
+            )
+        profile = cameras.get(self.settings.camera_profile)
+
+        frames, container_fps = detect.load_frames(path)
+        if self.settings.lens_model_path:
+            if self._lens_model is None:
+                self._lens_model = lens.LensModel.load(self.settings.lens_model_path)
+            frames = lens.undistort_frames(frames, self._lens_model)
+
+        fps, _ = calibrate.effective_fps(container_fps, profile.fps)
+        cfg = detect.DetectorConfig()
+        start = detect.find_impact_frame(frames)
+        candidates = detect.detect_candidates(frames, start, cfg)
+        track = detect.fit_track(
+            candidates, fps, cfg,
+            frame_height=frames[0].shape[0],
+            readout_s=profile.readout_s,
+        )
+        if track is None:
+            return None
+        return Shot.from_track(track, scale, club=club,
+                               source_clip=os.path.basename(path))
+
+    def _save(self) -> None:
+        try:
+            self.session.save(self.settings.session_path)
+        except Exception:                                  # noqa: BLE001
+            pass

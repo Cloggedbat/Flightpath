@@ -1,0 +1,4 @@
+{
+  "python.analysis.extraPaths": ["engine"],
+  "files.exclude": { "**/__pycache__": true, "android/build": true, "android/app/build": true, "android/.gradle": true }
+}

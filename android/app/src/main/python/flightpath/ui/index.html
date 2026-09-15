@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FlightPath</title>
+<style>
+  :root {
+    --ground: #12241A;
+    --panel: #1B3326;
+    --panel-2: #23412F;
+    --line: #2F5540;
+    --ink: #F2F7F3;
+    --muted: #8FAE9C;
+    --accent: #38C13F;
+    --accent-ink: #0B1A10;
+    --warn: #E0A23C;
+    --bad: #D9614A;
+    --r: 14px;
+    --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 16px;
+    padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px 40px; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 18px 0 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 10px rgba(56,193,63,.6); }
+  .brand h1 { font-size: 19px; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+  .brand .st { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  .tabs { display: flex; gap: 6px; background: var(--panel); padding: 4px; border-radius: 999px; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--muted);
+    font: inherit; font-size: 13px; font-weight: 600;
+    padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  }
+  .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+  .hero {
+    background: var(--panel); border-radius: var(--r);
+    padding: 22px 20px; margin-bottom: 14px; text-align: center;
+  }
+  .hero .big {
+    font-size: clamp(56px, 20vw, 84px); font-weight: 800;
+    line-height: .95; letter-spacing: -.04em;
+    font-variant-numeric: tabular-nums; color: var(--accent);
+  }
+  .hero .unit { font-size: 14px; color: var(--muted); letter-spacing: .12em;
+                text-transform: uppercase; margin-top: 4px; }
+  .hero .empty { font-size: 16px; color: var(--muted); padding: 26px 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+  .cell { background: var(--panel-2); border-radius: 10px; padding: 12px 8px; }
+  .cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cell .k { font-size: 10px; color: var(--muted); letter-spacing: .1em;
+             text-transform: uppercase; margin-top: 3px; }
+
+  .conf { margin-top: 14px; display: flex; align-items: center; gap: 10px;
+          font-size: 12px; color: var(--muted); }
+  .bar { flex: 1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+
+  section { margin-top: 20px; }
+  h2 { font-size: 11px; letter-spacing: .13em; text-transform: uppercase;
+       color: var(--muted); margin: 0 0 10px; font-weight: 700; }
+
+  .clubs { display: flex; flex-wrap: wrap; gap: 7px; }
+  .clubs button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    font: inherit; font-size: 14px; font-weight: 600;
+    padding: 9px 15px; border-radius: 999px; cursor: pointer;
+  }
+  .clubs button[aria-pressed="true"] {
+    background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  }
+
+  .shoot {
+    width: 100%; border: 0; border-radius: var(--r);
+    background: var(--accent); color: var(--accent-ink);
+    font: inherit; font-size: 17px; font-weight: 800;
+    padding: 17px; cursor: pointer; margin-top: 14px;
+  }
+  .shoot:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+  .q li, .shots li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 13px; background: var(--panel); border-radius: 10px; margin-bottom: 7px;
+  }
+  .q .nm, .shots .nm { flex: 1; min-width: 0; font-size: 14px; }
+  .q .nm small, .shots .nm small { display: block; color: var(--muted); font-size: 12px; }
+  .q .pct { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .stage { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+           padding: 4px 9px; border-radius: 999px; background: var(--line); color: var(--muted); }
+  .stage.done { background: rgba(56,193,63,.18); color: var(--accent); }
+  .stage.failed { background: rgba(217,97,74,.2); color: var(--bad); }
+  .stage.downloading, .stage.analysing { background: rgba(224,162,60,.18); color: var(--warn); }
+
+  .shots .sp { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .shots .cl { font-size: 11px; color: var(--muted); text-transform: uppercase;
+               letter-spacing: .08em; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: right; padding: 9px 6px; border-bottom: 1px solid var(--line);
+           font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+  .note { font-size: 13px; color: var(--muted); line-height: 1.5;
+          background: var(--panel); border-left: 3px solid var(--warn);
+          padding: 12px 14px; border-radius: 0 10px 10px 0; }
+  .note b { color: var(--ink); }
+  .err { border-left-color: var(--bad); font-family: var(--mono); font-size: 12px;
+         white-space: pre-wrap; word-break: break-word; }
+  /* calibration sheet */
+  .sheet { position: fixed; inset: 0; background: var(--ground);
+           z-index: 50; overflow-y: auto;
+           padding: env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0); }
+  .sheet .inner { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px;
+                  min-height: 100%; background: var(--ground); }
+  .sheet h3 { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
+  .sheet p.lede { color: var(--muted); font-size: 14px; margin: 0 0 16px; line-height: 1.5; }
+  .steps { counter-reset: cs; list-style: none; padding: 0; margin: 0 0 16px; }
+  .steps li { counter-increment: cs; display: flex; gap: 11px; padding: 8px 0;
+              font-size: 14px; color: var(--muted); align-items: flex-start; }
+  .steps li::before { content: counter(cs); flex: none; width: 21px; height: 21px;
+      border-radius: 50%; background: var(--panel-2); color: var(--muted);
+      font-size: 11px; font-weight: 700; display: grid; place-items: center; margin-top: 1px; }
+  .steps li.on { color: var(--ink); font-weight: 600; }
+  .steps li.on::before { background: var(--accent); color: var(--accent-ink); }
+  .steps li.ok::before { content: "✓"; background: var(--accent); color: var(--accent-ink); }
+
+  .canvasWrap { position: relative; background: #000; border-radius: 10px;
+                overflow: hidden; margin-bottom: 12px; touch-action: manipulation; }
+  .canvasWrap canvas { display: block; width: 100%; height: auto; }
+  .lenRow { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .lenRow label { font-size: 13px; color: var(--muted); flex: none; }
+  .lenRow input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line);
+      color: var(--ink); font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 9px; }
+  .lenRow select { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+      font: inherit; font-size: 15px; padding: 10px 8px; border-radius: 9px; }
+  .btnRow { display: flex; gap: 9px; }
+  .btnRow button { flex: 1; border: 0; border-radius: 12px; font: inherit;
+      font-size: 15px; font-weight: 700; padding: 15px 10px; cursor: pointer; }
+  .btnRow .prim { background: var(--accent); color: var(--accent-ink); }
+  .btnRow .prim:disabled { background: var(--line); color: var(--muted); }
+  .btnRow .sec { background: var(--panel-2); color: var(--ink); }
+  .calibStat { font-size: 13px; color: var(--muted); margin: 10px 0 0; min-height: 20px; }
+  .calibStat.bad { color: var(--bad); }
+  .calBtn { width: 100%; border: 1px solid var(--warn); background: transparent;
+      color: var(--warn); font: inherit; font-size: 14px; font-weight: 700;
+      padding: 12px; border-radius: 10px; margin-top: 10px; cursor: pointer; }
+  /* setup wizard */
+  .wiz-tabs { display: flex; gap: 6px; margin: 0 0 18px; }
+  .wiz-tabs span {
+    flex: 1; text-align: center; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 8px 4px; border-radius: 8px;
+    background: var(--panel); color: var(--muted); font-weight: 700;
+  }
+  .wiz-tabs span.on { background: var(--accent); color: var(--accent-ink); }
+  .wiz-tabs span.ok { background: var(--panel-2); color: var(--accent); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px;
+        background: var(--panel); border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+  .kv b { font-weight: 600; font-size: 14px; }
+  .kv span { font-family: var(--mono); font-size: 13px; color: var(--muted); text-align: right; }
+  .kv span.good { color: var(--accent); }
+  .kv span.bad { color: var(--bad); }
+  .pos { background: var(--panel); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  .pos ol { margin: 0; padding-left: 20px; font-size: 15px; line-height: 1.55; }
+  .pos li { margin-bottom: 8px; }
+  .pos li::marker { color: var(--accent); font-weight: 700; }
+  .diagram { display: block; width: 100%; max-width: 360px; margin: 6px auto 4px; }
+  .connectBox { background: var(--panel); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  .nets { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+  .nets button {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+    font: inherit; font-size: 15px; padding: 11px 13px; border-radius: 10px; cursor: pointer;
+    text-align: left;
+  }
+  .nets button.gp { border-color: var(--accent); }
+  .nets button .sig { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .nets button .tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    background: var(--accent); color: var(--accent-ink); padding: 3px 7px; border-radius: 999px; font-weight: 700; }
+  .nets .none { font-size: 13px; color: var(--muted); padding: 6px 2px; }
+  .connectBox p { margin: 0 0 10px; font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .connectBox p b { color: var(--ink); }
+  .connectBox .btnRow { margin-top: 4px; }
+  a.btnLink { display: flex; align-items: center; justify-content: center; flex: 1;
+      text-decoration: none; border-radius: 12px; font: inherit; font-size: 15px;
+      font-weight: 700; padding: 15px 10px; background: var(--panel-2); color: var(--ink); }
+  .hdrConnect { border: 1px solid var(--warn); background: transparent; color: var(--warn);
+      font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px;
+      border-radius: 999px; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <div>
+        <h1>FlightPath</h1>
+        <div class="st" id="camstat">connecting</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="hdrConnect" id="hdrConnect" hidden>Connect camera</button>
+      <div class="tabs" role="group" aria-label="Capture mode">
+        <button id="mQueue" aria-pressed="true">Queue</button>
+        <button id="mFocus" aria-pressed="false">Focus</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="note" id="calibNote" hidden>
+    <b>Set up first.</b> Three short steps: camera, position, calibrate. About
+    five minutes, and it only has to be done once per setup.
+    <button class="calBtn" id="openCalib">Start setup</button>
+  </div>
+
+  <div class="hero">
+    <div id="heroEmpty" class="empty">No shots yet. Hit one.</div>
+    <div id="heroData" hidden>
+      <div class="big" id="hSpeed">0</div>
+      <div class="unit">mph ball speed</div>
+      <div class="grid">
+        <div class="cell"><div class="v" id="hCarry">0</div><div class="k">carry yds</div></div>
+        <div class="cell"><div class="v" id="hLaunch">0</div><div class="k">launch °</div></div>
+        <div class="cell"><div class="v" id="hApex">0</div><div class="k">apex ft</div></div>
+      </div>
+      <div class="conf">
+        <span>confidence</span>
+        <span class="bar"><i id="hConf" style="width:0%"></i></span>
+        <span id="hConfV">0.00</span>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Club</h2>
+    <div class="clubs" id="clubs"></div>
+    <button class="shoot" id="shoot">Record a shot</button>
+  </section>
+
+  <section id="queueSec" hidden>
+    <h2>In flight</h2>
+    <ul class="q" id="queue"></ul>
+  </section>
+
+  <section id="shotsSec" hidden>
+    <h2>Session</h2>
+    <ul class="shots" id="shots"></ul>
+  </section>
+
+  <section id="gapSec" hidden>
+    <h2>Gapping</h2>
+    <table>
+      <thead><tr><th>Club</th><th>n</th><th>Carry</th><th>SD</th><th>Ball</th></tr></thead>
+      <tbody id="gap"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <button class="calBtn" id="openCalib2" style="border-color:var(--line);color:var(--muted)">
+      Setup and calibration
+    </button>
+  </section>
+
+  <section id="updSec" hidden>
+    <h2>App</h2>
+    <div class="kv">
+      <b>Version</b><span id="updVer">?</span>
+      <b>Update server</b><span id="updSrv" style="word-break:break-all">not set</span>
+    </div>
+    <div class="lenRow">
+      <label for="updUrl">Server</label>
+      <input id="updUrl" type="url" inputmode="url" placeholder="https://your-app.up.railway.app" autocapitalize="off" autocomplete="off">
+    </div>
+    <div class="btnRow">
+      <button class="sec" id="updSave">Save server</button>
+      <button class="prim" id="updCheck">Check for updates</button>
+    </div>
+    <p class="calibStat" id="updStat"></p>
+  </section>
+
+  <section id="errSec" hidden>
+    <h2>Last error</h2>
+    <div class="note err" id="err"></div>
+  </section>
+
+</div>
+
+<div class="sheet" id="calibSheet" hidden>
+  <div class="inner">
+    <div class="wiz-tabs">
+      <span id="wt1">1 Camera</span><span id="wt2">2 Position</span><span id="wt3">3 Calibrate</span>
+    </div>
+
+    <!-- ===== step 1: camera ===== -->
+    <div id="wiz1">
+      <h3>Camera</h3>
+      <p class="lede">The app needs the GoPro on its WiFi and in the one video mode
+        that works for this: 1080p at 240 frames per second, Linear lens, stabilisation off.</p>
+
+      <div class="kv">
+        <b>Engine</b><span id="w1engine">checking</span>
+        <b>Connection</b><span id="w1conn">checking</span>
+        <b>Resolution</b><span id="w1res">?</span>
+        <b>Frame rate</b><span id="w1fps">?</span>
+        <b>Lens</b><span id="w1lens">?</span>
+        <b>HyperSmooth</b><span id="w1hs">?</span>
+      </div>
+
+      <div class="connectBox" id="w1help" hidden>
+        <p><b>1. On the camera:</b> swipe down, Preferences, Connections, Connect Device,
+          <b>GoPro App</b>. Leave it on that screen. It shows the network name
+          (GP&hellip;) and password.</p>
+        <p><b>2. On the phone:</b> tap below, pick the GP&hellip; network, enter the
+          password. When Android says no internet, tap <b>keep connected</b>.</p>
+        <div id="nativeConnect" hidden>
+          <div class="btnRow" style="margin-bottom:4px">
+            <button class="sec" id="nScan" style="flex:1">Scan for the camera's WiFi</button>
+          </div>
+          <div class="nets" id="nets" hidden></div>
+          <div class="lenRow">
+            <label for="nSsid">Network</label>
+            <input id="nSsid" type="text" placeholder="GP12345678 (blank = any GoPro)" autocapitalize="characters" autocomplete="off">
+          </div>
+          <div class="lenRow">
+            <label for="nPw">Password</label>
+            <input id="nPw" type="password" placeholder="on the camera screen" autocomplete="off">
+          </div>
+          <div class="btnRow">
+            <button class="prim" id="nConnect" style="flex:1">Connect to camera</button>
+          </div>
+          <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
+            stays on 5G for everything else. Before tapping: close the GoPro Quik app, put the
+            camera on <b>Connect Device &rsaquo; GoPro App</b> so its WiFi is broadcasting, and
+            make sure the phone's <b>Location</b> toggle is on (Android hides networks otherwise).</p>
+          <div class="btnRow" style="margin-top:12px">
+            <button class="sec" id="nUseCurrent" style="flex:1">Already joined in WiFi settings? Use that</button>
+          </div>
+        </div>
+        <div class="btnRow" id="webConnect">
+          <a class="btnLink" id="w1wifi"
+             href="intent:#Intent;action=android.settings.panel.action.WIFI;end">Open WiFi settings</a>
+          <button class="prim" id="w1connect">Check camera</button>
+        </div>
+        <p style="margin:10px 0 0;font-size:12px">Samsung: turn off Intelligent Wi-Fi
+          &rsaquo; Switch to mobile data, or it will kick you off the camera.</p>
+      </div>
+
+      <div class="btnRow">
+        <button class="sec" id="w1cancel">Later</button>
+        <button class="prim" id="w1apply">Apply camera settings</button>
+      </div>
+      <p class="calibStat" id="w1stat"></p>
+      <div class="btnRow" style="margin-top:8px">
+        <button class="sec" id="w1next" style="flex:1">Next: position</button>
+      </div>
+    </div>
+
+    <!-- ===== step 2: position ===== -->
+    <div id="wiz2" hidden>
+      <h3>Position the camera</h3>
+      <p class="lede">Side-on is what makes the maths simple. Get these five right and
+        the numbers take care of themselves.</p>
+
+      <svg class="diagram" viewBox="0 0 360 150" role="img" aria-label="Top-down: camera to the side of the ball, square to the target line">
+        <rect x="0" y="0" width="360" height="150" rx="10" fill="#1B3326"/>
+        <line x1="60" y1="75" x2="330" y2="75" stroke="#2F5540" stroke-width="2" stroke-dasharray="6 5"/>
+        <text x="332" y="79" fill="#8FAE9C" font-size="11" font-family="sans-serif">target</text>
+        <circle cx="90" cy="75" r="6" fill="#F2F7F3"/>
+        <text x="80" y="60" fill="#8FAE9C" font-size="11" font-family="sans-serif">ball</text>
+        <line x1="96" y1="75" x2="230" y2="75" stroke="#38C13F" stroke-width="3"/>
+        <polygon points="230,69 242,75 230,81" fill="#38C13F"/>
+        <rect x="120" y="83" width="120" height="4" rx="2" fill="#E0A23C"/>
+        <text x="132" y="101" fill="#E0A23C" font-size="11" font-family="sans-serif">club on the ground</text>
+        <rect x="76" y="118" width="28" height="18" rx="3" fill="#F2F7F3"/>
+        <rect x="104" y="122" width="8" height="10" rx="1" fill="#F2F7F3"/>
+        <line x1="90" y1="118" x2="90" y2="83" stroke="#8FAE9C" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <text x="30" y="132" fill="#8FAE9C" font-size="11" font-family="sans-serif">camera</text>
+        <text x="48" y="104" fill="#8FAE9C" font-size="10" font-family="sans-serif">8–10 ft</text>
+      </svg>
+
+      <div class="pos">
+        <ol>
+          <li><b>Tripod 8 to 10 ft directly to your side</b>, lens pointing straight across the target line, not angled toward or away from the target. Every degree off makes the ball read slow.</li>
+          <li><b>Lens low</b>, between ball height and knee height.</li>
+          <li><b>6 to 8 ft of clear space</b> in front of the ball in the frame, so it stays in view for several frames.</li>
+          <li><b>Lay a club on the ground</b> where the ball will fly, parallel to the camera, at the same distance from the lens as the ball. That is your scale in the next step.</li>
+          <li><b>Daylight, sun behind or beside the camera.</b> Not into the lens.</li>
+        </ol>
+      </div>
+
+      <div class="btnRow">
+        <button class="sec" id="w2back">Back</button>
+        <button class="prim" id="w2next">Next: calibrate</button>
+      </div>
+    </div>
+
+    <!-- ===== step 3: calibrate (existing flow) ===== -->
+    <div id="wiz3" hidden>
+      <h3>Calibrate</h3>
+      <p class="lede">The app measures speed in pixels. Tapping both ends of the club
+        tells it how many pixels make a metre.</p>
+
+      <div id="calCapture">
+        <div class="btnRow">
+          <button class="sec" id="calCancel">Back</button>
+          <button class="prim" id="calShoot">Capture a frame</button>
+        </div>
+        <p class="calibStat" id="calStat"></p>
+      </div>
+
+      <div id="calMark" hidden>
+        <div class="canvasWrap"><canvas id="calCanvas"></canvas></div>
+        <div class="lenRow">
+          <label for="calLen">Real length</label>
+          <input id="calLen" type="number" inputmode="decimal" value="46" min="1" step="0.5">
+          <select id="calUnit">
+            <option value="in" selected>inches</option>
+            <option value="cm">cm</option>
+          </select>
+        </div>
+        <div class="btnRow">
+          <button class="sec" id="calRedo">Start over</button>
+          <button class="prim" id="calSave" disabled>Save and finish</button>
+        </div>
+        <p class="calibStat" id="calStat2">Tap the first end of the club.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var CLUBS = ["Dr", "3w", "5w", "4i", "5i", "6i", "7i", "8i", "9i", "PW", "GW", "SW", "LW"];
+  var club = "7i", mode = "queue", busy = false;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function post(path, body) {
+    return fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }).then(function (r) { return r.json(); });
+  }
+
+  // ----- club chips -----
+  var wrap = $("clubs");
+  CLUBS.forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = c;
+    b.setAttribute("aria-pressed", String(c === club));
+    b.addEventListener("click", function () {
+      club = c;
+      Array.prototype.forEach.call(wrap.children, function (el) {
+        el.setAttribute("aria-pressed", String(el === b));
+      });
+      post("/api/club", { club: c });
+      try { localStorage.setItem("fp-club", c); } catch (e) {}
+    });
+    wrap.appendChild(b);
+  });
+  try {
+    var saved = localStorage.getItem("fp-club");
+    if (saved && CLUBS.indexOf(saved) >= 0) {
+      club = saved;
+      Array.prototype.forEach.call(wrap.children, function (el) {
+        el.setAttribute("aria-pressed", String(el.textContent === saved));
+      });
+    }
+  } catch (e) {}
+
+  // ----- mode -----
+  function setMode(m) {
+    mode = m;
+    $("mQueue").setAttribute("aria-pressed", String(m === "queue"));
+    $("mFocus").setAttribute("aria-pressed", String(m === "focus"));
+    post("/api/mode", { mode: m });
+  }
+  $("mQueue").addEventListener("click", function () { setMode("queue"); });
+  $("mFocus").addEventListener("click", function () { setMode("focus"); });
+
+  // ----- manual trigger -----
+  $("shoot").addEventListener("click", function () {
+    if (busy) return;
+    busy = true;
+    $("shoot").disabled = true;
+    $("shoot").textContent = "Recording";
+    post("/api/trigger", { seconds: 3 }).then(function () {
+      setTimeout(function () { busy = false; }, 3500);
+    });
+  });
+
+  // ----- render -----
+  function n(v, d) { return (v === null || v === undefined) ? "0" : Number(v).toFixed(d === undefined ? 1 : d); }
+
+  // Clip filenames and error text originate at the camera, and the club label
+  // comes in over the API. None of it is trusted, and all of it lands in
+  // innerHTML below, so escape every one.
+  var ESCMAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  function esc(v) {
+    return String(v === null || v === undefined ? "" : v)
+      .replace(/[&<>"']/g, function (c) { return ESCMAP[c]; });
+  }
+
+  function render(s) {
+    lastState = s;
+    if (!$("calibSheet").hidden && wizStep === 1) wizRenderCamera(s);
+    if (!s.calibrated && !wizAutoOpened) {
+      wizAutoOpened = true;
+      calShow(true, 1);
+    }
+    $("shoot").disabled = busy || !s.calibrated || !s.camera_ok;
+    $("shoot").textContent = !s.camera_ok ? "Camera not connected"
+                           : !s.calibrated ? "Set up first"
+                           : (busy ? "Recording" : "Record a shot");
+    $("hdrConnect").hidden = !!s.camera_ok;
+    $("dot").className = "dot" + (s.camera_ok ? " ok" : "");
+    $("camstat").textContent = s.camera_note + (s.shot_count ? "  ·  " + s.shot_count + " shots" : "");
+    $("calibNote").hidden = !!s.calibrated;
+
+    if (s.mode !== mode) {
+      mode = s.mode;
+      $("mQueue").setAttribute("aria-pressed", String(mode === "queue"));
+      $("mFocus").setAttribute("aria-pressed", String(mode === "focus"));
+    }
+
+    var latest = s.shots && s.shots.length ? s.shots[0] : null;
+    $("heroEmpty").hidden = !!latest;
+    $("heroData").hidden = !latest;
+    if (latest) {
+      $("hSpeed").textContent = n(latest.ball_speed_mph);
+      $("hCarry").textContent = n(latest.carry_yards, 0);
+      $("hLaunch").textContent = n(latest.launch_angle_deg);
+      $("hApex").textContent = n(latest.apex_feet, 0);
+      var c = Math.max(0, Math.min(1, latest.confidence || 0));
+      $("hConf").style.width = (c * 100).toFixed(0) + "%";
+      $("hConfV").textContent = c.toFixed(2);
+    }
+
+    var q = (s.queue || []).filter(function (e) { return e.stage !== "done"; });
+    $("queueSec").hidden = q.length === 0;
+    $("queue").innerHTML = q.map(function (e) {
+      var pct = e.stage === "downloading"
+        ? Math.round((e.progress || 0) * 100) + "%  ·  " + Math.round(e.eta_s || 0) + "s"
+        : "";
+      var st = /^[a-z]+$/.test(e.stage || "") ? e.stage : "waiting";
+      return '<li><span class="stage ' + st + '">' + esc(st) + "</span>" +
+             '<span class="nm">' + esc(e.name) + "<small>" +
+             esc(e.message || e.club) + "</small></span>" +
+             '<span class="pct">' + esc(pct) + "</span></li>";
+    }).join("");
+
+    var shots = s.shots || [];
+    $("shotsSec").hidden = shots.length === 0;
+    $("shots").innerHTML = shots.slice(0, 15).map(function (x) {
+      return '<li><span class="sp">' + n(x.ball_speed_mph) + "</span>" +
+             '<span class="nm">' + n(x.carry_yards, 0) + " yds carry<small>" +
+             n(x.launch_angle_deg) + "° launch  ·  conf " + n(x.confidence, 2) +
+             "</small></span>" +
+             '<span class="cl">' + esc(x.club || "?") + "</span></li>";
+    }).join("");
+
+    var gap = s.club_summary || [];
+    $("gapSec").hidden = gap.length === 0;
+    $("gap").innerHTML = gap.map(function (r) {
+      return "<tr><td>" + esc(r.club) + "</td><td>" + n(r.shots, 0) + "</td><td>" +
+             n(r.carry_avg, 0) + "</td><td>" + n(r.carry_sd, 1) + "</td><td>" +
+             n(r.ball_speed_avg) + "</td></tr>";
+    }).join("");
+
+    $("errSec").hidden = !s.last_error;
+    $("err").textContent = s.last_error || "";
+  }
+
+  // ---------- setup wizard ----------
+  var calPts = [], calImg = null, calNat = [0, 0], calPolling = false;
+  var wizStep = 1, wizAutoOpened = false, lastState = null;
+
+  function calShow(on, step) {
+    $("calibSheet").hidden = !on;
+    if (on) { calReset(); wizGo(step || 1); }
+  }
+  function wizGo(n) {
+    wizStep = n;
+    [1, 2, 3].forEach(function (i) {
+      $("wiz" + i).hidden = i !== n;
+      var t = $("wt" + i);
+      t.className = i === n ? "on" : (i < n ? "ok" : "");
+    });
+    if (n === 1) { wizRenderCamera(lastState); checkEngine(); }
+    if (n === 3) calReset();
+  }
+  function calReset() {
+    calPts = []; calImg = null;
+    $("calCapture").hidden = false;
+    $("calMark").hidden = true;
+    $("calSave").disabled = true;
+    $("calStat").textContent = "";
+    $("calStat").className = "calibStat";
+    $("calStat2").textContent = "Tap the first end of the club.";
+  }
+
+  function mark(id, text, ok) {
+    var el = $(id);
+    el.textContent = text;
+    el.className = ok === true ? "good" : (ok === false ? "bad" : "");
+  }
+  function wizRenderCamera(s) {
+    if (!s) return;
+    var cs = s.camera_settings || {};
+    mark("w1conn", s.camera_ok ? "connected" : "not connected", !!s.camera_ok);
+    $("w1help").hidden = !!s.camera_ok;
+    if (!s.camera_ok) {
+      ["w1res", "w1fps", "w1lens", "w1hs"].forEach(function (id) { mark(id, "?", null); });
+      $("w1apply").disabled = true;
+      return;
+    }
+    $("w1apply").disabled = false;
+    mark("w1res",  cs.resolution == null ? "?" : String(cs.resolution), cs.resolution === "1080p");
+    mark("w1fps",  cs.fps == null ? "?" : cs.fps + " fps", cs.fps === 240);
+    var lensOk = cs.lens === "Linear" || cs.lens === "Linear + Horizon";
+    mark("w1lens", cs.lens == null ? "?" : String(cs.lens), cs.lens == null ? null : lensOk);
+    mark("w1hs",   cs.hypersmooth == null ? "?" : String(cs.hypersmooth), cs.hypersmooth == null ? null : cs.hypersmooth === "Off");
+  }
+
+  // Engine self-test: decodes two bundled clips (H.264 + HEVC) and tracks the
+  // ball in each. On Android this is what tells us whether the phone's hardware
+  // decoder is reachable, since that OpenCV build has no FFmpeg.
+  var engineChecked = false;
+  function checkEngine() {
+    if (engineChecked) return;
+    engineChecked = true;
+    mark("w1engine", "testing…", null);
+    fetch("/api/selftest").then(function (r) { return r.json(); }).then(function (r) {
+      var h = r.clips && r.clips.h264 || {}, v = r.clips && r.clips.hevc || {};
+      if (r.ok && r.hevc_ok) {
+        mark("w1engine", "ok  (H.264 + HEVC, OpenCV " + r.opencv + ")", true);
+      } else if (r.ok) {
+        mark("w1engine", "H.264 only, set camera to H.264", false);
+        $("w1stat").className = "calibStat bad";
+        $("w1stat").textContent = r.advice || "";
+      } else {
+        mark("w1engine", "cannot decode video", false);
+        $("w1stat").className = "calibStat bad";
+        $("w1stat").textContent = (r.advice || "") + " " + (h.error || v.error || "");
+      }
+    }).catch(function () { mark("w1engine", "no reply", false); engineChecked = false; });
+  }
+
+  $("openCalib").addEventListener("click", function () { calShow(true, 1); });
+  $("openCalib2").addEventListener("click", function () { calShow(true, 1); });
+  $("w1cancel").addEventListener("click", function () { calShow(false); });
+  $("w1next").addEventListener("click", function () { wizGo(2); });
+  $("w2back").addEventListener("click", function () { wizGo(1); });
+  $("w2next").addEventListener("click", function () { wizGo(3); });
+  $("calCancel").addEventListener("click", function () { wizGo(2); });
+  $("calRedo").addEventListener("click", calReset);
+
+  function connectCamera(btn, statEl) {
+    btn.disabled = true;
+    var was = btn.textContent;
+    btn.textContent = "Checking…";
+    if (statEl) { statEl.className = "calibStat"; statEl.textContent = ""; }
+    post("/api/camera/connect", {}).then(function (r) {
+      btn.disabled = false; btn.textContent = was;
+      lastState = Object.assign({}, lastState || {}, r);
+      wizRenderCamera(lastState);
+      if (statEl) {
+        statEl.className = r.camera_ok ? "calibStat" : "calibStat bad";
+        statEl.textContent = r.camera_ok
+          ? "Connected. Now apply the camera settings."
+          : "Still no camera. Check the phone is on the GP… network and not back on 5G.";
+      }
+    }).catch(function () {
+      btn.disabled = false; btn.textContent = was;
+      if (statEl) { statEl.className = "calibStat bad"; statEl.textContent = "No reply from the app."; }
+    });
+  }
+  $("w1connect").addEventListener("click", function () { connectCamera($("w1connect"), $("w1stat")); });
+
+  // ---- native Android bridge (present only inside the FlightPath APK) ----
+  var native = (window.FlightPathNative && window.FlightPathNative.isNative &&
+                window.FlightPathNative.isNative()) ? window.FlightPathNative : null;
+  if (native) {
+    $("nativeConnect").hidden = false;
+    $("webConnect").hidden = true;
+    try { $("nSsid").value = native.savedSsid() || ""; } catch (e) {}
+    $("nConnect").addEventListener("click", function () {
+      var pw = $("nPw").value || "";
+      if (pw.length < 8) {
+        $("w1stat").className = "calibStat bad";
+        $("w1stat").textContent = "Enter the camera's WiFi password (it is on the camera: Preferences › Connections › Camera Info).";
+        return;
+      }
+      $("nConnect").disabled = true;
+      $("w1stat").className = "calibStat";
+      $("w1stat").textContent = "Asking Android for the camera’s WiFi… pick it in the dialog if one appears.";
+      native.connectCamera(($("nSsid").value || "").trim(), pw);
+    });
+    var scanTimer = null, scanTries = 0;
+    function renderNets(list) {
+      var box = $("nets");
+      box.hidden = false;
+      if (!list.length) {
+        box.innerHTML = '<div class="none">No networks found yet\u2026</div>';
+        return;
+      }
+      list.sort(function (a, b) { return (b.gopro - a.gopro) || (b.level - a.level); });
+      box.innerHTML = "";
+      list.forEach(function (n) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = n.gopro ? "gp" : "";
+        b.innerHTML = '<span>' + esc(n.ssid) + '</span><span>' +
+                      (n.gopro ? '<span class="tag">GoPro</span> ' : '') +
+                      '<span class="sig">' + esc(n.level) + ' dBm</span></span>';
+        b.addEventListener("click", function () {
+          $("nSsid").value = n.ssid;
+          $("nPw").focus();
+          $("w1stat").className = "calibStat";
+          $("w1stat").textContent = "Network set to " + n.ssid + ". Enter the password and tap Connect.";
+        });
+        box.appendChild(b);
+      });
+      var anyGp = list.some(function (n) { return n.gopro; });
+      if (!anyGp) {
+        var d = document.createElement("div");
+        d.className = "none";
+        d.textContent = "No GoPro network in this list. The camera is not broadcasting: on the camera go to Preferences \u203a Connections \u203a Connect Device \u203a GoPro App, then scan again.";
+        box.appendChild(d);
+      }
+    }
+    function pollScan() {
+      var list = [];
+      try { list = JSON.parse(native.scanResults() || "[]"); } catch (e) {}
+      renderNets(list);
+      scanTries += 1;
+      if (scanTries < 6) { scanTimer = setTimeout(pollScan, 1500); }
+      else { $("nScan").disabled = false; $("nScan").textContent = "Scan again"; }
+    }
+    $("nScan").addEventListener("click", function () {
+      $("nScan").disabled = true;
+      $("nScan").textContent = "Scanning\u2026";
+      $("nets").hidden = false;
+      $("nets").innerHTML = '<div class="none">Scanning\u2026</div>';
+      scanTries = 0;
+      try { native.scanNetworks(); } catch (e) { $("nScan").disabled = false; }
+    });
+    window.__nativeScan = function (state) {
+      if (state === "started") {
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(pollScan, 1200);
+      } else if (state === "denied") {
+        $("nScan").disabled = false;
+        $("nScan").textContent = "Scan for the camera's WiFi";
+        $("nets").innerHTML = '<div class="none">Android needs the Location permission to list WiFi networks. It is used for nothing else. Allow it, or type the network name by hand.</div>';
+      }
+    };
+
+    $("nUseCurrent").addEventListener("click", function () {
+      $("w1stat").className = "calibStat";
+      $("w1stat").textContent = "Binding the app to the phone\u2019s current WiFi\u2026";
+      try { native.useCurrentWifi(); } catch (e) {}
+    });
+    // Called back from Kotlin when the network binding changes.
+    window.__nativeWifi = function (state, detail) {
+      $("nConnect").disabled = false;
+      if (state === "connected") {
+        $("w1stat").className = "calibStat";
+        $("w1stat").textContent = "Joined " + detail + ". Checking the camera…";
+        setTimeout(function () { connectCamera($("nConnect"), $("w1stat")); }, 1500);
+      } else if (state === "unavailable") {
+        $("w1stat").className = "calibStat bad";
+        $("w1stat").textContent = detail;
+      } else if (state === "lost") {
+        $("w1stat").className = "calibStat bad";
+        $("w1stat").textContent = "Camera WiFi dropped. Tap Connect to camera again.";
+      }
+    };
+    // ---- updates ----
+    $("updSec").hidden = false;
+    try { $("updVer").textContent = native.appVersion(); } catch (e) {}
+    function showSrv() {
+      var u = ""; try { u = native.updateServer() || ""; } catch (e) {}
+      $("updSrv").textContent = u || "not set";
+      $("updUrl").value = u;
+    }
+    showSrv();
+    $("updSave").addEventListener("click", function () {
+      var u = ($("updUrl").value || "").trim();
+      if (u && !/^https?:\/\//.test(u)) u = "https://" + u;
+      try { native.setUpdateServer(u); } catch (e) {}
+      showSrv();
+      $("updStat").className = "calibStat";
+      $("updStat").textContent = u ? "Saved." : "Cleared.";
+    });
+    var pendingApk = "";
+    $("updCheck").addEventListener("click", function () {
+      if (pendingApk) { try { native.downloadUpdate(pendingApk); } catch (e) {} return; }
+      $("updCheck").disabled = true;
+      $("updStat").className = "calibStat";
+      $("updStat").textContent = "Checking\u2026";
+      try { native.checkForUpdate(); } catch (e) { $("updCheck").disabled = false; }
+    });
+    window.__nativeUpdate = function (r) {
+      $("updCheck").disabled = false;
+      $("updStat").className = r.ok ? "calibStat" : "calibStat bad";
+      $("updStat").textContent = r.message || "";
+      if (r.ok && r.newer) {
+        pendingApk = r.apkUrl;
+        $("updCheck").textContent = "Download " + r.versionName;
+        $("updStat").textContent += " Tap Download, then tap the file when Chrome finishes, then Update.";
+      } else {
+        pendingApk = "";
+        $("updCheck").textContent = "Check for updates";
+      }
+    };
+    // Quiet check on launch, so a red dot style nudge appears without nagging.
+    setTimeout(function () { try { native.checkForUpdate(); } catch (e) {} }, 4000);
+
+    // On launch, silently retry the last camera. Android skips the dialog for
+    // a network the user already approved.
+    setTimeout(function () { try { native.reconnectSaved(); } catch (e) {} }, 800);
+  }
+  $("hdrConnect").addEventListener("click", function () { calShow(true, 1); });
+
+  // If the Android WiFi panel intent is not honoured (some browsers ignore
+  // intent: links), fall back to plain instructions rather than a dead tap.
+  $("w1wifi").addEventListener("click", function () {
+    setTimeout(function () {
+      if (!document.hidden) {
+        $("w1stat").className = "calibStat";
+        $("w1stat").textContent = "If WiFi settings did not open: pull down from the top of the screen and long-press the WiFi icon.";
+      }
+    }, 900);
+  });
+
+  $("w1apply").addEventListener("click", function () {
+    $("w1apply").disabled = true;
+    $("w1stat").className = "calibStat";
+    $("w1stat").textContent = "Setting 1080p · 240 fps · Linear · HyperSmooth off…";
+    post("/api/camera/configure", {}).then(function (r) {
+      $("w1apply").disabled = false;
+      if (r && r.ok) {
+        $("w1stat").textContent = "Camera confirmed. Ready.";
+      } else {
+        $("w1stat").className = "calibStat bad";
+        var probs = (r && r.problems) ? r.problems.join("; ") : "unknown error";
+        $("w1stat").textContent = "Could not confirm everything: " + probs +
+          ". Check the camera screen and set anything red by hand.";
+      }
+      if (r && r.settings) {
+        lastState = Object.assign({}, lastState || {}, { camera_ok: true, camera_settings: r.settings });
+        wizRenderCamera(lastState);
+      }
+    }).catch(function () {
+      $("w1apply").disabled = false;
+      $("w1stat").className = "calibStat bad";
+      $("w1stat").textContent = "No reply from the app.";
+    });
+  });
+
+  $("calShoot").addEventListener("click", function () {
+    $("calShoot").disabled = true;
+    $("calStat").className = "calibStat";
+    $("calStat").textContent = "Recording a short clip…";
+    post("/api/calibrate/capture", { seconds: 2 }).then(function () {
+      calPolling = true;
+      calWatch();
+    });
+  });
+
+  function calWatch() {
+    if (!calPolling) return;
+    fetch("/api/state").then(function (r) { return r.json(); }).then(function (s) {
+      var stage = s.calib_stage;
+      if (stage === "recording") { $("calStat").textContent = "Recording…"; }
+      else if (stage === "fetching") { $("calStat").textContent = "Pulling the clip off the camera…"; }
+      else if (stage === "ready") {
+        calPolling = false;
+        $("calShoot").disabled = false;
+        calLoadImage();
+        return;
+      } else if (stage === "failed") {
+        calPolling = false;
+        $("calShoot").disabled = false;
+        $("calStat").className = "calibStat bad";
+        $("calStat").textContent = "Failed: " + (s.calib_message || "unknown");
+        return;
+      }
+      setTimeout(calWatch, 900);
+    }).catch(function () { calPolling = false; $("calShoot").disabled = false; });
+  }
+
+  function calLoadImage() {
+    var img = new Image();
+    img.onload = function () {
+      calImg = img;
+      calNat = [img.naturalWidth, img.naturalHeight];
+      $("calCapture").hidden = true;
+      $("calMark").hidden = false;
+      calDraw();
+    };
+    img.onerror = function () {
+      $("calStat").className = "calibStat bad";
+      $("calStat").textContent = "Could not load the captured frame.";
+    };
+    img.src = "/api/calibrate/frame?t=" + Date.now();
+  }
+
+  function calDraw() {
+    var c = $("calCanvas"), ctx = c.getContext("2d");
+    var maxW = Math.min(c.parentNode.clientWidth || 360, 900);
+    var scale = maxW / calNat[0];
+    c.width = calNat[0]; c.height = calNat[1];
+    c.style.width = maxW + "px";
+    ctx.drawImage(calImg, 0, 0);
+
+    var r = Math.max(7, calNat[0] / 130);
+    ctx.lineWidth = Math.max(3, calNat[0] / 400);
+    if (calPts.length === 2) {
+      ctx.strokeStyle = "#38C13F";
+      ctx.beginPath();
+      ctx.moveTo(calPts[0][0], calPts[0][1]);
+      ctx.lineTo(calPts[1][0], calPts[1][1]);
+      ctx.stroke();
+    }
+    calPts.forEach(function (p, i) {
+      ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fillStyle = "#38C13F"; ctx.fill();
+      ctx.strokeStyle = "#0B1A10"; ctx.stroke();
+      ctx.fillStyle = "#0B1A10";
+      ctx.font = "bold " + Math.round(r * 1.3) + "px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(i + 1), p[0], p[1]);
+    });
+  }
+
+  $("calCanvas").addEventListener("click", function (ev) {
+    if (!calImg) return;
+    var rect = this.getBoundingClientRect();
+    var x = (ev.clientX - rect.left) / rect.width * calNat[0];
+    var y = (ev.clientY - rect.top) / rect.height * calNat[1];
+    if (calPts.length >= 2) calPts = [];
+    calPts.push([x, y]);
+    calDraw();
+    if (calPts.length === 1) {
+      $("calStat2").textContent = "Now tap the other end.";
+      $("calSave").disabled = true;
+    } else {
+      var px = Math.hypot(calPts[1][0] - calPts[0][0], calPts[1][1] - calPts[0][1]);
+      $("calStat2").textContent = px.toFixed(0) + " px apart. Set the real length, then save.";
+      $("calSave").disabled = px < 20;
+    }
+  });
+
+  $("calSave").addEventListener("click", function () {
+    if (calPts.length !== 2) return;
+    var len = parseFloat($("calLen").value);
+    if (!(len > 0)) { $("calStat2").textContent = "Enter a real length first."; return; }
+    var inches = $("calUnit").value === "cm" ? len / 2.54 : len;
+    $("calSave").disabled = true;
+    post("/api/reference", {
+      x1: calPts[0][0], y1: calPts[0][1],
+      x2: calPts[1][0], y2: calPts[1][1], inches: inches
+    }).then(function (r) {
+      if (r && r.error) {
+        $("calStat2").textContent = "Rejected: " + r.error;
+        $("calSave").disabled = false;
+      } else {
+        calShow(false);
+      }
+    });
+  });
+
+  function poll() {
+    fetch("/api/state")
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        $("dot").className = "dot";
+        $("camstat").textContent = "backend unreachable";
+      })
+      .then(function () { setTimeout(poll, 1000); });
+  }
+  poll();
+})();
+</script>
+</body>
+</html>
