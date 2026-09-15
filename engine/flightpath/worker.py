@@ -129,6 +129,7 @@ class Worker:
         self.calib_message = ""
         self.camera_settings: dict = {}
         self.camera_configured = False
+        self.preview_on = False
         self._misses = 0                 # consecutive failed polls
 
         if os.path.exists(settings.session_path):
@@ -169,6 +170,8 @@ class Worker:
                 "has_ref_frame": self.ref_frame_jpeg is not None,
                 "camera_settings": {k: v for k, v in self.camera_settings.items() if k != "raw"},
                 "camera_configured": self.camera_configured,
+                "preview_on": self.preview_on,
+                "preview_port": gopro.PREVIEW_UDP_PORT,
                 "ref_frame_w": self.ref_frame_size[0],
                 "ref_frame_h": self.ref_frame_size[1],
                 "queue": [q.as_dict() for q in self.queue[-12:]],
@@ -218,6 +221,7 @@ class Worker:
         """Manual shutter. Call begin_trigger() first to claim it."""
         seconds = max(0.2, min(float(seconds), 15.0))
         try:
+            self.stop_preview()
             self.client.start_recording()
             time.sleep(seconds)
             self.client.stop_recording()
@@ -299,6 +303,29 @@ class Worker:
                 self.calib_message = f"{w}x{h}"
         except Exception as exc:                           # noqa: BLE001
             stage("failed", f"{type(exc).__name__}: {exc}")
+
+    # ---------- live preview ----------
+
+    def start_preview(self) -> dict:
+        """Start the camera's UDP live view. Returns where to listen."""
+        try:
+            self.client.start_preview()
+        except Exception as exc:                           # noqa: BLE001
+            with self._lock:
+                self.preview_on = False
+                self.last_error = f"live view failed: {exc}"
+            return {"ok": False, "error": str(exc)}
+        with self._lock:
+            self.preview_on = True
+        return {"ok": True, "port": gopro.PREVIEW_UDP_PORT}
+
+    def stop_preview(self) -> dict:
+        with self._lock:
+            was_on = self.preview_on
+            self.preview_on = False
+        if was_on:
+            self.client.stop_preview()
+        return {"ok": True}
 
     def configure_camera(self) -> dict:
         """Put the camera into 1080p240 Linear so the user does not have to."""

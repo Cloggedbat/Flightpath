@@ -231,6 +231,12 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/camera/refresh":
             return self._json(self.worker.refresh_camera_settings())
 
+        if path == "/api/preview/start":
+            return self._json(self.worker.start_preview())
+
+        if path == "/api/preview/stop":
+            return self._json(self.worker.stop_preview())
+
         if path == "/api/clear":
             self.worker.clear_session()
             return self._json({"ok": True})

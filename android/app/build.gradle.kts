@@ -23,8 +23,8 @@ android {
         applicationId = "dev.flightpath.app"
         minSdk = 29            // WifiNetworkSpecifier needs API 29; Chaquopy needs 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         // Baked-in default; the app lets the user change it. Pass
         // -PupdateUrl=https://your-service.up.railway.app at build time.
         buildConfigField("String", "UPDATE_URL",
@@ -79,4 +79,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.webkit:webkit:1.12.1")
+    // Live view: the GoPro pushes MPEG-TS/H.264 over UDP; Media3 plays it
+    // with the phone's hardware decoder, which OpenCV on Android cannot.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
 }

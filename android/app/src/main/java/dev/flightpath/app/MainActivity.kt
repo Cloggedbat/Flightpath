@@ -22,12 +22,14 @@ import kotlin.concurrent.thread
  * hand the WebView a tiny bridge so the "Connect camera" button can drive the
  * native WiFi binding. Everything else already exists in Python.
  */
+@androidx.media3.common.util.UnstableApi
 class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
     private lateinit var wifi: CameraWifi
     private lateinit var scanner: WifiScanner
     private lateinit var updater: Updater
+    private lateinit var live: LiveView
     private val prefs by lazy { getSharedPreferences("flightpath", Context.MODE_PRIVATE) }
 
     private val locationPermission =
@@ -47,13 +49,18 @@ class MainActivity : AppCompatActivity() {
         wifi = CameraWifi(this)
         scanner = WifiScanner(this)
         updater = Updater(this)
+        live = LiveView(this) { state, msg ->
+            js("window.__nativeLive && window.__nativeLive(${q(state)}, ${q(msg)})")
+        }
 
         setupWebView()
         startPythonThenLoad()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (web.canGoBack()) web.goBack() else finish()
+                if (live.isOpen) live.hide("closed")
+                else if (web.canGoBack()) web.goBack()
+                else finish()
             }
         })
     }
@@ -190,6 +197,18 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun downloadUpdate(url: String) { runOnUiThread { updater.download(url) } }
 
+        /** Show the camera's live picture full screen. Events via window.__nativeLive(state, msg). */
+        @JavascriptInterface
+        fun showLiveView(port: Int, leftHanded: Boolean) {
+            runOnUiThread { live.show(port, leftHanded) }
+        }
+
+        @JavascriptInterface
+        fun hideLiveView() { runOnUiThread { live.hide("closed") } }
+
+        @JavascriptInterface
+        fun isLiveOpen(): Boolean = live.isOpen
+
         @JavascriptInterface
         fun disconnectCamera() {
             runOnUiThread { wifi.disconnect() }
@@ -207,6 +226,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun q(s: String): String =
         "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'"
+
+    override fun onPause() {
+        super.onPause()
+        // Never leave a decoder running in the background.
+        if (live.isOpen) live.hide("closed")
+    }
 
     override fun onDestroy() {
         scanner.stop()

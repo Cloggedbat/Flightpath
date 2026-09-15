@@ -40,7 +40,13 @@ ENDPOINTS = {
     "media_list": ["/gopro/media/list", "/gp/gpMediaList"],
     "keep_alive": ["/gopro/camera/keep_alive", "/gp/gpControl/command/system/sleep?p=0"],
     "version": ["/gopro/version", "/gp/gpControl/info"],
+    # Live preview: the camera pushes an MPEG-TS/H.264 stream over UDP to
+    # port 8554 of whichever client asked for it. Low resolution, aiming only.
+    "stream_start": ["/gopro/camera/stream/start", "/gp/gpControl/execute?p1=gpStream&c1=restart"],
+    "stream_stop": ["/gopro/camera/stream/stop", "/gp/gpControl/execute?p1=gpStream&c1=stop"],
 }
+
+PREVIEW_UDP_PORT = 8554
 
 # Open GoPro setting ids and option values. These are read back from the
 # camera after being set, so a wrong id shows up as "could not confirm"
@@ -219,6 +225,20 @@ class GoProClient:
 
     def stop_recording(self) -> None:
         self._call("shutter_stop")
+
+    def start_preview(self) -> None:
+        """Ask the camera to stream its live view to us on UDP 8554.
+
+        The camera must be idle: starting the shutter kills the stream, so the
+        worker stops it before every capture and the UI restarts it after.
+        """
+        self._call("stream_start")
+
+    def stop_preview(self) -> None:
+        try:
+            self._call("stream_stop")
+        except GoProError:
+            pass
 
     def is_recording(self) -> bool | None:
         """None when the state shape is not recognised, rather than a wrong False."""

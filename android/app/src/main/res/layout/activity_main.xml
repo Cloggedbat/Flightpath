@@ -1,6 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
-<WebView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/web"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#12241A" />
+    android:background="#12241A">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#12241A" />
+
+    <!-- Live view overlay. Hidden until the page asks for it. -->
+    <FrameLayout
+        android:id="@+id/liveOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:use_controller="false"
+            app:resize_mode="fit"
+            app:surface_type="surface_view"
+            app:shutter_background_color="#000000" />
+
+        <dev.flightpath.app.GuideView
+            android:id="@+id/guides"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/liveStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="28dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:background="#B012241A"
+            android:textColor="#F2F7F3"
+            android:textSize="14sp"
+            android:text="Starting live view…" />
+
+        <TextView
+            android:id="@+id/liveClose"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="14dp"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:background="#D012241A"
+            android:textColor="#F2F7F3"
+            android:textSize="15sp"
+            android:text="Close" />
+    </FrameLayout>
+</FrameLayout>

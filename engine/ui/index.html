@@ -161,6 +161,10 @@
   .btnRow .sec { background: var(--panel-2); color: var(--ink); }
   .calibStat { font-size: 13px; color: var(--muted); margin: 10px 0 0; min-height: 20px; }
   .calibStat.bad { color: var(--bad); }
+  .liveBox { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 4px; }
+  .liveBox label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .hdrLive { border: 1px solid var(--accent); background: transparent; color: var(--accent);
+    font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
   .calBtn { width: 100%; border: 1px solid var(--warn); background: transparent;
       color: var(--warn); font: inherit; font-size: 14px; font-weight: 700;
       padding: 12px; border-radius: 10px; margin-top: 10px; cursor: pointer; }
@@ -222,6 +226,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <button class="hdrConnect" id="hdrConnect" hidden>Connect camera</button>
+      <button class="hdrLive" id="hdrLive" hidden>Live</button>
       <div class="tabs" role="group" aria-label="Capture mode">
         <button id="mQueue" aria-pressed="true">Queue</button>
         <button id="mFocus" aria-pressed="false">Focus</button>
@@ -410,6 +415,12 @@
         </ol>
       </div>
 
+      <div class="liveBox">
+        <button class="sec" id="w2live">Live view</button>
+        <label><input type="checkbox" id="w2lefty"> Left-handed</label>
+      </div>
+      <div class="calibStat" id="w2liveStat">See what the camera sees while you move the tripod.</div>
+
       <div class="btnRow">
         <button class="sec" id="w2back">Back</button>
         <button class="prim" id="w2next">Next: calibrate</button>
@@ -537,6 +548,12 @@
                            : !s.calibrated ? "Set up first"
                            : (busy ? "Recording" : "Record a shot");
     $("hdrConnect").hidden = !!s.camera_ok;
+    $("hdrLive").hidden = !s.camera_ok || busy;
+    $("w2live").textContent = s.preview_on ? "Stop live view" : "Live view";
+    if (liveOpen && !s.preview_on && native && native.hideLiveView) {
+      liveOpen = false;               // the engine stopped it (a shot was triggered)
+      native.hideLiveView();
+    }
     $("dot").className = "dot" + (s.camera_ok ? " ok" : "");
     $("camstat").textContent = s.camera_note + (s.shot_count ? "  ·  " + s.shot_count + " shots" : "");
     $("calibNote").hidden = !!s.calibrated;
@@ -700,6 +717,52 @@
     });
   }
   $("w1connect").addEventListener("click", function () { connectCamera($("w1connect"), $("w1stat")); });
+
+  // ---- live view ----
+  var liveOpen = false;
+  try { $("w2lefty").checked = localStorage.getItem("fp_lefty") === "1"; } catch (e) {}
+  $("w2lefty").addEventListener("change", function () {
+    try { localStorage.setItem("fp_lefty", $("w2lefty").checked ? "1" : "0"); } catch (e) {}
+  });
+  function liveToggle(statEl) {
+    if (lastState && lastState.preview_on) {
+      post("/api/preview/stop", {}).then(function () {
+        if (statEl) { statEl.className = "calibStat"; statEl.textContent = "Live view stopped."; }
+      });
+      return;
+    }
+    if (statEl) { statEl.className = "calibStat"; statEl.textContent = "Asking the camera for its picture…"; }
+    post("/api/preview/start", {}).then(function (r) {
+      if (!r || !r.ok) {
+        if (statEl) {
+          statEl.className = "calibStat bad";
+          statEl.textContent = "Live view failed: " + ((r && r.error) || "camera not reachable") +
+            ". The camera must be connected and not recording.";
+        }
+        return;
+      }
+      var port = r.port || 8554;
+      if (native && native.showLiveView) {
+        liveOpen = true;
+        native.showLiveView(port, !!$("w2lefty").checked);
+        if (statEl) statEl.textContent = "";
+      } else if (statEl) {
+        statEl.textContent = "Streaming. Open VLC, Media › Open Network Stream, and play udp://@:" + port +
+          ". Tap Stop live view when you are done.";
+      }
+    });
+  }
+  $("w2live").addEventListener("click", function () { liveToggle($("w2liveStat")); });
+  $("hdrLive").addEventListener("click", function () { liveToggle(null); });
+  window.__nativeLive = function (state, msg) {
+    if (state === "closed" || state === "ended") {
+      liveOpen = false;
+      post("/api/preview/stop", {});
+    } else if (state === "error") {
+      $("w2liveStat").className = "calibStat bad";
+      $("w2liveStat").textContent = msg || "Live view failed.";
+    }
+  };
 
   // ---- native Android bridge (present only inside the FlightPath APK) ----
   var native = (window.FlightPathNative && window.FlightPathNative.isNative &&
