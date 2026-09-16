@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.5, versionCode 6.
+App version 0.1.6, versionCode 7.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -65,6 +65,13 @@ restarted the live stream on every reconnect. Status now follows a cheap
 `state()` heartbeat, and a media list failure is a queue hiccup, not a lost
 camera.
 
+0.1.6 fixes calibration capture reporting "camera produced no clip" for every
+failure. trigger()'s result was ignored, so a shutter the camera refused or
+ignored looked like a missing clip. It now checks the camera is actually
+encoding, stops the live view without letting that abort the shot, and the
+status row says "no media list (SD card in?)" when the media list has never
+answered, which is what a missing SD card looks like.
+
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
 - Tap-to-calibrate scale (0.1%), drop-test readout solve, rolling-shutter correction.
@@ -74,14 +81,17 @@ Proven:
   boots inside it and serves the wizard.
 - Native WiFi join to the camera via `WifiNetworkSpecifier`, the wizard's
   "Connect to camera" button. The phone stays on cellular for calls.
+- The 0.1.5 connection holds with cellular on. No airplane mode needed.
+- Media list works once the SD card is in. With no card the HERO9 answers
+  status but 404s on both media list paths.
 
 NOT proven (in order of importance):
 1. Whether OpenCV inside the APK can decode the camera's H.264/HEVC video.
    The Camera step of the wizard shows an "Engine" row that answers this.
    The row has been on screen but its value has not been read back yet.
-2. That the 0.1.5 connection fix holds with cellular on. 0.1.4 flapped every
-   3 s. Airplane mode stopped it, which is not an acceptable fix because the
-   phone has to take calls.
+2. That calibration capture works end to end on the real camera. 0.1.5 said
+   "camera produced no clip" with the card in. 0.1.6 tells apart a shutter the
+   camera ignored from a clip that never appeared; the next attempt says which.
 3. Live view (GoPro UDP MPEG-TS preview via Media3). Works against a fake
    camera; never seen a real stream.
 4. Any real golf ball. Every number ever produced is from a synthetic clip.

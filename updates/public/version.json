@@ -1,5 +1,5 @@
 {
-  "versionCode": 6,
-  "versionName": "0.1.5",
-  "notes": "Camera connection no longer flaps. Status now follows a cheap heartbeat, and a slow media list is a queue hiccup rather than a lost camera. Connect no longer restarts the live stream."
+  "versionCode": 7,
+  "versionName": "0.1.6",
+  "notes": "Calibration capture now reports why the shutter failed instead of 'no clip', confirms the camera is actually recording, and a live view left running can no longer block the shutter. Status says so when the camera has no media list (SD card out)."
 }

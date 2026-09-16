@@ -219,12 +219,46 @@ class Worker:
         return True
 
     def trigger(self, seconds: float = 3.0) -> str:
-        """Manual shutter. Call begin_trigger() first to claim it."""
+        """Manual shutter. Call begin_trigger() first to claim it.
+
+        Returns "recorded" on success, otherwise a short reason. Callers must
+        check it: a shutter the camera ignored looks exactly like one that
+        worked, right up until you go looking for the clip.
+        """
         seconds = max(0.2, min(float(seconds), 15.0))
         try:
-            self.stop_preview()
+            # Best effort. The camera kills the stream itself when the shutter
+            # starts, so a failure stopping it must never cost the shot.
+            try:
+                self.stop_preview()
+            except Exception as exc:                       # noqa: BLE001
+                with self._lock:
+                    self.last_error = f"live view stop: {exc}"
+
+            t0 = time.monotonic()
             self.client.start_recording()
-            time.sleep(seconds)
+            # Confirm the camera is actually encoding. A HERO9 sitting in a
+            # menu, or in photo mode, answers the shutter command and records
+            # nothing. Two reads, in case status lags the first. Only an
+            # explicit False fails; an unknown shape (None) is trusted.
+            time.sleep(min(0.7, seconds / 2))
+            rec = self.client.is_recording()
+            if rec is False:
+                time.sleep(0.5)
+                rec = self.client.is_recording()
+            if rec is False:
+                try:
+                    self.client.stop_recording()
+                except Exception:                          # noqa: BLE001
+                    pass
+                msg = ("camera did not start recording. Is it on its shooting "
+                       "screen and in video mode?")
+                with self._lock:
+                    self.last_error = f"trigger failed: {msg}"
+                return msg
+            remaining = seconds - (time.monotonic() - t0)
+            if remaining > 0:
+                time.sleep(remaining)
             self.client.stop_recording()
             return "recorded"
         except Exception as exc:                           # noqa: BLE001
@@ -258,9 +292,13 @@ class Worker:
             stage("recording")
             before = {i.path for i in self.client.media_list()}
             if self.begin_trigger():
-                self.trigger(seconds)
+                result = self.trigger(seconds)
             else:
                 stage("failed", "camera is busy")
+                return
+            if result != "recorded":
+                # The shutter did not happen. Do not go looking for a clip.
+                stage("failed", f"shutter: {result}")
                 return
 
             stage("fetching")
@@ -273,7 +311,8 @@ class Worker:
                     item = sorted(fresh, key=lambda i: i.mtime)[-1]
                     break
             if item is None:
-                stage("failed", "camera produced no clip")
+                stage("failed", "camera recorded but no new clip appeared in 15 s. "
+                                "Check the camera shows a new video, then try again.")
                 return
 
             path = self.client.download(item, self.settings.clip_dir)
@@ -415,6 +454,8 @@ class Worker:
                 # recorded since are picked up normally.
                 with self._lock:
                     self.last_error = f"media list baseline: {type(exc).__name__}: {exc}"
+                    if not self._baselined:
+                        self.camera_note = "connected, but no media list (SD card in?)"
             try:
                 self.refresh_camera_settings()
             except Exception:                              # noqa: BLE001
@@ -466,10 +507,17 @@ class Worker:
         except Exception as exc:                           # noqa: BLE001
             with self._lock:
                 self.last_error = f"media list: {type(exc).__name__}: {exc}"
+                if not self._baselined:
+                    # It has never answered since we connected. That is not a
+                    # hiccup, it is a camera with no SD card or a card that has
+                    # never been recorded on. Say so where the user is looking.
+                    self.camera_note = "connected, but no media list (SD card in?)"
             return
         with self._lock:
             if self.last_error.startswith("media list"):
                 self.last_error = ""
+            if self.camera_note.startswith("connected, but"):
+                self.camera_note = "connected"
         if not self._baselined:
             # The connect-time baseline failed on a cold start. This list is
             # the baseline: everything on the card is old news, none of it work.

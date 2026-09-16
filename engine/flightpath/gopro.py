@@ -239,9 +239,12 @@ class GoProClient:
         self._call("stream_start")
 
     def stop_preview(self) -> None:
+        # Never fatal. A resolved path raises raw HTTPError/URLError rather
+        # than GoProError, and stopping a stream that is not running is not
+        # an error anyone needs to hear about.
         try:
             self._call("stream_stop")
-        except GoProError:
+        except Exception:                                  # noqa: BLE001
             pass
 
     def is_recording(self) -> bool | None:
