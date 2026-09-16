@@ -177,8 +177,8 @@ class GoProClient:
         """
         res = ProbeResult(reachable=False, host=f"{self.host}:{self.port}")
         for name, paths in ENDPOINTS.items():
-            if name in ("shutter_start", "shutter_stop"):
-                continue                                   # do not fire the shutter to test
+            if name in ("shutter_start", "shutter_stop", "stream_start", "stream_stop"):
+                continue           # never fire the shutter or toggle the stream to test
             ok = False
             why = ""
             for path in paths:
@@ -198,6 +198,10 @@ class GoProClient:
 
         if res.reachable:
             # Shutter paths are assumed to pair with whichever family answered.
+            # Stream paths are deliberately NOT pinned here: _call() resolves
+            # them on first real use by trying both candidates, so a wrong
+            # family guess cannot 404 the live view. Probing either for real
+            # would fire the shutter or restart the stream on every reconnect.
             family = 0 if res.working.get("state", "").startswith("/gopro") else 1
             for name in ("shutter_start", "shutter_stop"):
                 self._resolved[name] = ENDPOINTS[name][family]

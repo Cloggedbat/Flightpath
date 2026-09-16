@@ -1,5 +1,5 @@
 {
-  "versionCode": 5,
-  "versionName": "0.1.4",
-  "notes": "Live view of the camera (Position step and Live button). Left-handed guide toggle."
+  "versionCode": 6,
+  "versionName": "0.1.5",
+  "notes": "Camera connection no longer flaps. Status now follows a cheap heartbeat, and a slow media list is a queue hiccup rather than a lost camera. Connect no longer restarts the live stream."
 }

@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.4, versionCode 5.
+App version 0.1.5, versionCode 6.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -58,29 +58,34 @@ OneDrive. Restore them from `flightpath-signing-key.zip` before building
 anything that goes to another person. Switching back to the permanent key
 means uninstalling whatever the debug key installed.
 
-This build reused versionCode 5 instead of bumping it. It installs only
-because the previous copy was uninstalled first. The next build that will be
-installed must be versionCode 6.
+0.1.5 fixes the camera status flapping on and off every 3 s. The poll loop's
+3-strike counter never reset after the first drop, liveness was judged on the
+slow media list while reconnect was judged on any endpoint, and probe()
+restarted the live stream on every reconnect. Status now follows a cheap
+`state()` heartbeat, and a media list failure is a queue hiccup, not a lost
+camera.
 
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
 - Tap-to-calibrate scale (0.1%), drop-test readout solve, rolling-shutter correction.
 - Security hardening verified against a hostile fake camera.
 - Real HERO9 answers the Open GoPro HTTP API at 10.5.5.9:8080.
+- The debug-signed APK installs and runs on the S22 Ultra; the Python engine
+  boots inside it and serves the wizard.
+- Native WiFi join to the camera via `WifiNetworkSpecifier`, the wizard's
+  "Connect to camera" button. The phone stays on cellular for calls.
 
 NOT proven (in order of importance):
 1. Whether OpenCV inside the APK can decode the camera's H.264/HEVC video.
    The Camera step of the wizard shows an "Engine" row that answers this.
-2. Native WiFi join to the camera (`WifiNetworkSpecifier`). Last attempt
-   said "cannot find the device". A WiFi scanner and a "use current WiFi"
-   fallback were added; untested since.
+   The row has been on screen but its value has not been read back yet.
+2. That the 0.1.5 connection fix holds with cellular on. 0.1.4 flapped every
+   3 s. Airplane mode stopped it, which is not an acceptable fix because the
+   phone has to take calls.
 3. Live view (GoPro UDP MPEG-TS preview via Media3). Works against a fake
    camera; never seen a real stream.
 4. Any real golf ball. Every number ever produced is from a synthetic clip.
 5. Rolling-shutter readout time of the HERO9 (drop test measures it).
-6. That the 0.1.4 debug-signed APK installs and runs on the S22 Ultra, and
-   that the Python engine boots inside it. This build has not been installed
-   or launched on the phone.
 
 ## The active plan
 
@@ -118,6 +123,11 @@ python analyze.py shot t.mp4 --camera hero9-1080p240 --readout-ms 0 --ref 120,98
 
 Run the synthetic clip test after any change to `detect.py`, `physics.py` or
 `calibrate.py`. Match the generated `--fps` to the profile or you read half.
+
+The PC venv runs opencv-python 5.0.0 and numpy 2.2.6 because requirements.txt
+floats at >=4.8. The APK is pinned to 4.5.1.48 / numpy 1.26.2. So a green PC
+selftest is evidence about the tracker and physics, not about decoding on the
+phone. Do not treat it as answering NOT-proven item 1.
 
 ### Build and install the APK (Windows)
 

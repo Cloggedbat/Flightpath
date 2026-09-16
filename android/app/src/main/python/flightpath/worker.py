@@ -131,6 +131,7 @@ class Worker:
         self.camera_configured = False
         self.preview_on = False
         self._misses = 0                 # consecutive failed polls
+        self._baselined = False          # seen holds everything already on the card
 
         if os.path.exists(settings.session_path):
             try:
@@ -383,20 +384,37 @@ class Worker:
 
     def _connect(self, timeout: float = 4.0) -> None:
         res = self.client.probe(timeout=timeout)
+        # Reachable has to mean the endpoint the heartbeat uses answered, not
+        # just any endpoint. Otherwise probe says up on /version while _tick
+        # says down on /state and the status oscillates on a 12 s period.
+        ok = res.reachable and "state" in res.working
         with self._lock:
-            self.camera_ok = res.reachable
+            self.camera_ok = ok
+            if ok:
+                # A fresh connection gets a fresh 3-strike budget. Without this
+                # the counter stays at 3 forever after the first drop, so every
+                # later failed poll re-trips it and the status square-waves.
+                self._misses = 0
             self.camera_note = (
-                f"connected ({res.firmware})" if res.reachable and res.firmware
-                else "connected" if res.reachable
+                f"connected ({res.firmware})" if ok and res.firmware
+                else "connected" if ok
+                else "camera answers but its status endpoint does not" if res.reachable
                 else "no camera at 10.5.5.9"
             )
-        if res.reachable:
+        if ok:
             try:
                 # Baseline: everything already on the card is old news.
                 for item in self.client.media_list():
                     self.seen.add(item.path)
-            except Exception:                              # noqa: BLE001
-                pass
+                self._baselined = True
+            except Exception as exc:                       # noqa: BLE001
+                # Not silent any more. _baselined is left as it was: False on
+                # a cold start, so _tick treats its first good media list as
+                # the baseline instead of queueing the whole SD card; True on
+                # a reconnect, where seen already holds the history and clips
+                # recorded since are picked up normally.
+                with self._lock:
+                    self.last_error = f"media list baseline: {type(exc).__name__}: {exc}"
             try:
                 self.refresh_camera_settings()
             except Exception:                              # noqa: BLE001
@@ -407,9 +425,12 @@ class Worker:
             self._connect()
             return
 
-        self.client.keep_alive()
+        # Heartbeat first, on the cheap status endpoint. This alone decides
+        # whether the camera is still there. It has to be the same kind of
+        # check _connect() uses to declare it reachable, or the two disagree
+        # and the status oscillates: probe says up, the poll says down, forever.
         try:
-            items = self.client.media_list()
+            self.client.state()
             self._misses = 0
         except Exception as exc:                           # noqa: BLE001
             # One failed poll is not a lost camera. The HERO9 answers slowly or
@@ -432,6 +453,30 @@ class Worker:
                 self.last_error = ""
             if self.camera_note.startswith("connected, camera busy"):
                 self.camera_note = "connected"
+
+        # Work. The media list walks the whole SD card and the HERO9 stalls or
+        # errors on it while busy. That is a queue hiccup, never a lost camera,
+        # so it must not touch camera_ok or the miss counter.
+        try:
+            self.client.keep_alive()        # best effort; state() already proved liveness
+        except Exception:                                  # noqa: BLE001
+            pass
+        try:
+            items = self.client.media_list()
+        except Exception as exc:                           # noqa: BLE001
+            with self._lock:
+                self.last_error = f"media list: {type(exc).__name__}: {exc}"
+            return
+        with self._lock:
+            if self.last_error.startswith("media list"):
+                self.last_error = ""
+        if not self._baselined:
+            # The connect-time baseline failed on a cold start. This list is
+            # the baseline: everything on the card is old news, none of it work.
+            for i in items:
+                self.seen.add(i.path)
+            self._baselined = True
+            return
         fresh = [i for i in items if i.is_main_video and i.path not in self.seen]
         fresh.sort(key=lambda i: i.mtime)
 
