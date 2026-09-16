@@ -209,15 +209,15 @@ possible. The error shrinks toward zero as that shrinks.
 
 ## Troubleshooting
 
-1. **"no answer from 10.5.5.9"** — the phone dropped the camera's WiFi for
+1. **"no answer from 10.5.5.9"**: the phone dropped the camera's WiFi for
    cellular. Rejoin and accept the no-internet prompt.
-2. **Speeds read exactly half or double** — frame rate mismatch. Check the
+2. **Speeds read exactly half or double**: frame rate mismatch. Check the
    camera is actually in 1080p240 and that `--camera` matches.
-3. **"no ball track found"** — shoot brighter, or lower `--threshold`. Check
+3. **"no ball track found"**: shoot brighter, or lower `--threshold`. Check
    the ball is in frame for at least four frames after impact.
-4. **Everything reads slow** — the camera is not square to the target line.
+4. **Everything reads slow**: the camera is not square to the target line.
    Cosine error, same as radar.
-5. **App runs but numbers look wrong** — check your reference stick was in the
+5. **App runs but numbers look wrong**: check your reference stick was in the
    ball's flight plane, not nearer or further from the camera.
 
 ---

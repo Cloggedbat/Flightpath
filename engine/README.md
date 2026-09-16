@@ -89,7 +89,7 @@ camera's fisheye is exactly the distortion you do not want anywhere near a
 scale measurement.
 
 It has one real use. In 360 mode at 4K120 it sees the entire scene, so it
-captures launch *direction* — the left and right that a single side-on camera
+captures launch *direction*, the left and right that a single side-on camera
 is blind to. That is the missing axis for a GolfTrak-style dispersion compass.
 Angular resolution is about 10.7 px per degree, so a ball at 10 ft is roughly
 9 px across: marginal, but detectable. Park this until the HERO9 side works,
