@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.6, versionCode 7.
+App version 0.1.7, versionCode 8.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -71,6 +71,21 @@ ignored looked like a missing clip. It now checks the camera is actually
 encoding, stops the live view without letting that abort the shot, and the
 status row says "no media list (SD card in?)" when the media list has never
 answered, which is what a missing SD card looks like.
+
+0.1.7 makes the shutter work on this HERO9. The camera answers
+/gopro/camera/state but returns 404 for /gopro/camera/shutter/start, and
+probe() had pinned the shutter to that path by family guess with no
+fallback. Every capture since the first build had hit that 404; 0.1.5 hid
+it as "camera produced no clip", 0.1.6 showed it as "HTTP 404". The shutter
+and stream paths are no longer pinned; _call() tries both candidates on
+first real use and falls through to the legacy /gp/gpControl shutter.
+
+0.1.7 also stops the poll loop from picking up the calibration clip as a
+golf shot. capture_reference_frame() and _tick() both discovered it, both
+downloaded it to the same .part, and the tick then queued a 2 s clip of a
+still club for analysis. While a capture is in flight (calib_stage recording
+or fetching, capped at 60 s so a hung capture cannot stall shots) the tick
+leaves new clips alone.
 
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.

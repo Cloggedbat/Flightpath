@@ -1,5 +1,5 @@
 {
-  "versionCode": 7,
-  "versionName": "0.1.6",
-  "notes": "Calibration capture now reports why the shutter failed instead of 'no clip', confirms the camera is actually recording, and a live view left running can no longer block the shutter. Status says so when the camera has no media list (SD card out)."
+  "versionCode": 8,
+  "versionName": "0.1.7",
+  "notes": "Shutter works on a HERO9 that 404s the Open GoPro shutter path: the app now falls back to the legacy shutter command instead of failing every capture. The calibration clip is no longer analysed as a golf shot. From 0.1.6: calibration reports why the shutter failed, confirms the camera is recording, live view cannot block the shutter, and status says when there is no media list (SD card out)."
 }

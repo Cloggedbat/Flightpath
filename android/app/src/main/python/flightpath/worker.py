@@ -132,6 +132,7 @@ class Worker:
         self.preview_on = False
         self._misses = 0                 # consecutive failed polls
         self._baselined = False          # seen holds everything already on the card
+        self._calib_started = 0.0        # monotonic() when a calibration capture began
 
         if os.path.exists(settings.session_path):
             try:
@@ -289,6 +290,7 @@ class Worker:
                 self.calib_message = msg
 
         try:
+            self._calib_started = time.monotonic()
             stage("recording")
             before = {i.path for i in self.client.media_list()}
             if self.begin_trigger():
@@ -494,6 +496,15 @@ class Worker:
                 self.last_error = ""
             if self.camera_note.startswith("connected, camera busy"):
                 self.camera_note = "connected"
+            calibrating = (self.calib_stage in ("recording", "fetching")
+                           and time.monotonic() - self._calib_started < 60.0)
+        if calibrating:
+            # A calibration capture is in flight on another thread and owns
+            # whatever clip appears next; it adds it to seen once downloaded.
+            # Listing here would race it for the SD card and then analyse a
+            # 2 s clip of a still club as a golf shot. The 60 s cap means a
+            # capture that hangs cannot stall shot processing for good.
+            return
 
         # Work. The media list walks the whole SD card and the HERO9 stalls or
         # errors on it while busy. That is a queue hiccup, never a lost camera,
