@@ -197,15 +197,16 @@ class GoProClient:
                 res.failed[name] = why or "no response"
 
         if res.reachable:
-            # Shutter paths are assumed to pair with whichever family answered.
-            # Stream paths are deliberately NOT pinned here: _call() resolves
-            # them on first real use by trying both candidates, so a wrong
-            # family guess cannot 404 the live view. Probing either for real
-            # would fire the shutter or restart the stream on every reconnect.
+            # Shutter and stream paths are NOT pinned here. _call() resolves
+            # each on first real use by trying both candidates in order, so a
+            # camera that answers /gopro/camera/state but 404s on
+            # /gopro/camera/shutter/start (a real HERO9 did exactly this)
+            # falls through to the legacy shutter instead of failing every
+            # capture. Probing them for real would fire the shutter or restart
+            # the stream on every reconnect. Listed below for the summary only.
             family = 0 if res.working.get("state", "").startswith("/gopro") else 1
-            for name in ("shutter_start", "shutter_stop"):
-                self._resolved[name] = ENDPOINTS[name][family]
-                res.working[name] = ENDPOINTS[name][family] + "  (not fired to test)"
+            for name in ("shutter_start", "shutter_stop", "stream_start", "stream_stop"):
+                res.working[name] = ENDPOINTS[name][family] + "  (not probed; resolved on first use)"
             try:
                 v = self._get_json(res.working["version"])
                 res.firmware = str(v.get("version") or v.get("info", {}).get("firmware_version", ""))
