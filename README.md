@@ -8,9 +8,10 @@ Architecture and style borrow from [OpenFlight](https://github.com/open-flight/o
 (local engine + browser UI, impact-triggered capture, per-metric confidence).
 No OpenFlight code is used; the radar DSP does not transfer to a camera.
 
-| folder | what it is |
+| path | what it is |
 |---|---|
-| `engine/` | Python package (`flightpath/`), CLI (`analyze.py`), Termux/desktop server (`run.py`), and the web UI. Start with `engine/README.md` and `engine/RANGE.md`. |
+| `CLAUDE.md` | Project scope: what is proven, what is frozen, and the active plan. Read it first. |
+| `engine/` | Python package (`flightpath/`), CLI (`analyze.py`), desktop server (`run.py`), and the web UI. Start with `engine/README.md` and `engine/RANGE.md`. |
 | `android/` | Native Android app. Bundles the engine with Chaquopy, joins the camera WiFi for the app only, shows the UI in a WebView. |
 | `updates/` | Tiny update server (Railway). Serves `version.json` and the latest APK to the in-app updater. |
 
@@ -36,4 +37,5 @@ After editing the engine, run `./sync-engine.sh` before building the app.
 ## Status
 
 Prototype. Ball tracking is validated on synthetic clips only; first real-ball
-range test is pending. Security notes are in `engine/RANGE.md`.
+range test is pending. The active plan, and the full list of what is proven and
+what is not, are in `CLAUDE.md`. Security notes are in `engine/RANGE.md`.

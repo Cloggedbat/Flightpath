@@ -3,8 +3,10 @@
 Camera-based golf launch monitor, offline prototype. Takes a high-speed clip
 and returns ball speed, launch angle and carry.
 
-This is the proof step. No app yet, on purpose: if the computer vision does not
-work on clips you have already recorded, nothing downstream matters.
+This is the proof layer. It was built first, on purpose: if the computer vision
+does not work on clips you have already recorded, nothing downstream matters.
+The Android app now wraps this same engine and ships it inside the APK, so the
+numbers here and the numbers on the phone come from identical code.
 
 **Validated on synthetic clips** (motion blur, sensor noise, moving clutter),
 at both 240 and 480 fps:

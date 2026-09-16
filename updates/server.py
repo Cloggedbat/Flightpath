@@ -4,7 +4,7 @@ Tiny on purpose: stdlib only, one process, no database. Railway builds it from
 the Dockerfile. Redeploying with a new APK in public/ IS the release process.
 
   GET /              landing page with a download button
-  GET /version.json  {"versionCode": 3, "versionName": "0.1.2", "apk": "/FlightPath.apk", "sha256": "..."}
+  GET /version.json  {"versionCode": 5, "versionName": "0.1.4", "apk": "/FlightPath.apk", "sha256": "..."}
   GET /FlightPath.apk
 """
 import hashlib

@@ -9,9 +9,11 @@ HERO9  --(WiFi HTTP)-->  S22 Ultra running Python  -->  browser UI
   records                pulls clips, runs the CV         numbers
 ```
 
-No Bluetooth. Turning the camera's WiFi on by hand and joining it from the
-phone gets the full control surface over plain HTTP, and BLE from Termux is
-painful enough that one extra button press is a good trade.
+No Bluetooth today. Turning the camera's WiFi on by hand and joining it from
+the phone gets the full control surface over plain HTTP, so one extra button
+press buys you the whole Open GoPro API. BLE could remove that button press by
+starting and stopping recording directly, which is why `README.md` sketches it
+as a later step. It is not part of the current plan.
 
 ---
 
@@ -21,10 +23,12 @@ Three things can fail and you want to know which. Testing them all at once at
 the range means standing in a field unable to tell whether the problem is the
 phone, the camera, the light, or the maths.
 
-**1. Does the phone run it at all? 20 minutes, on the sofa.** Do the Termux
-setup below and run `python -c "import cv2, numpy; print(cv2.__version__)"`.
-If OpenCV will not install on your Android version, nothing else matters and
-you have lost twenty minutes instead of a trip.
+**1. Does the phone run it at all? 15 minutes, on the sofa.** Install the APK,
+open the wizard, and read the "Engine" row on the Camera step. `ok (H.264 +
+HEVC)` means go. `H.264 only` means go, and set the HERO9 to H.264 in
+Preferences, General, Video Compression. `cannot decode video` means the CV has
+to move off OpenCV, to a native MediaCodec decoder or to a server, and nothing
+downstream matters until it does.
 
 **2. Does the camera talk to it? 10 minutes, on the kitchen table.** Camera
 WiFi on, phone joined, then `python run.py --probe-only`. You want a list of
@@ -77,26 +81,30 @@ number as large as you can get it.
 
 ---
 
-## One-time phone setup, about 20 minutes
+## One-time phone setup, about 5 minutes
 
-1. Install **Termux** from F-Droid, not the Play Store. The Play Store build is
-   abandoned and its packages no longer resolve.
-2. In Termux:
+1. Install the FlightPath APK. The in-app updater handles every version after
+   the first one.
+2. Open it once. The Python engine ships inside the APK, so there is nothing to
+   install, no `pip` step, and no terminal on the phone.
+3. On the Camera step of the wizard, read the "Engine" row. It decodes a
+   bundled H.264 clip and a bundled HEVC clip and runs the real tracker against
+   them. That is the one thing which has to work before anything else matters.
 
-   ```bash
-   pkg update && pkg upgrade
-   pkg install python python-numpy opencv-python
-   termux-setup-storage
-   ```
+Android will ask for location permission. It is used only to list nearby WiFi
+networks so you can pick the camera out of them, and for nothing else.
 
-   Install OpenCV from `pkg`, not pip. Building it from source on a phone takes
-   hours and usually fails.
-3. Copy the `flightpath` folder onto the phone and `cd` into it.
-4. Check it imports:
+### On a PC instead
 
-   ```bash
-   python -c "import cv2, numpy; print(cv2.__version__)"
-   ```
+The same engine runs on a desktop, which is the fastest way to test a change
+without rebuilding the APK:
+
+```bash
+cd engine
+pip install -r requirements.txt
+python run.py                         # UI at http://127.0.0.1:8080
+python run.py --gopro-host 10.5.5.9   # PC joined to the camera's WiFi
+```
 
 ---
 
@@ -219,11 +227,20 @@ possible. The error shrinks toward zero as that shrinks.
 Short version: this is about as safe as a local tool gets, and the one real
 risk is the camera itself, which the code now treats as untrusted.
 
-**What it does not do.** No outbound network calls to anything but the camera.
-No telemetry, no analytics, no update check. The UI loads zero external
-resources: no CDN, no web fonts, no third-party scripts. Two dependencies,
-OpenCV and NumPy, and the web server is pure standard library. No `eval`, no
-`exec`, no `pickle`, no shell commands anywhere.
+**What it does not do.** No telemetry, no analytics, no accounts, no cloud. The
+UI loads zero external resources: no CDN, no web fonts, no third-party scripts.
+Two dependencies, OpenCV and NumPy, and the web server is pure standard
+library. No `eval`, no `exec`, no `pickle`, no shell commands anywhere.
+
+**The one call that does leave the phone.** The Android app checks for its own
+updates. That is the only outbound request in the product, and it happens only
+if an update server is set, either baked in at build time with `-PupdateUrl` or
+saved in Settings. With none set, the app talks to nothing but the camera. When
+one is set, the app checks about four seconds after launch and again whenever
+you tap Check for updates. The request is a plain HTTP GET for `version.json`,
+and it sends no identifiers and no usage data. Downloading a new APK hands the
+URL to your browser. The engine by itself, on a PC or inside the APK, makes no
+outbound calls at all.
 
 **The server binds 127.0.0.1.** Nothing off the phone can reach it. `--lan`
 opens it to the network and mints a random token you must send as
@@ -235,9 +252,9 @@ a preflight, so a hostile site cannot silently wipe your session or fire your
 shutter while the app is running. The Host header must be localhost or a
 private IP literal, which blocks DNS rebinding.
 
-**The camera is treated as hostile.** Anyone who can answer at `10.5.5.9` —
-an evil twin of the camera's SSID at a busy range, or another device on its
-network — chooses both the filenames and the file contents this app writes to
+**The camera is treated as hostile.** Anyone who can answer at `10.5.5.9`, an
+evil twin of the camera's SSID at a busy range or another device on its
+network, chooses both the filenames and the file contents this app writes to
 your phone. So: filenames are matched against a strict pattern and must be a
 plain name with a media extension, downloads are checked to land inside the
 clip directory, transfers are capped at the declared size plus slack, partial
@@ -253,14 +270,17 @@ frame count so a 4K clip cannot OOM the phone.
 **The honest residual risk.** OpenCV bundles FFmpeg, and that decoder is what
 parses video files. If a hostile camera feeds you a malformed MP4, the most
 severe realistic outcome in this whole stack is a memory-safety bug in
-libavcodec, which is not something this app can defend against. Keep OpenCV
-current. In practice, at a driving range, on the camera's own WPA2 network,
-with one device on it, this is a remote risk.
+libavcodec, which is not something this app can defend against. On a PC, keep
+OpenCV current. In the APK you cannot: Chaquopy 17 pins
+`opencv-python==4.5.1.48`, the only build with an Android wheel, so do not
+"fix" that pin unless you have checked that a newer wheel exists. In practice,
+at a driving range, on the camera's own WPA2 network, with one device on it,
+this is a remote risk.
 
-**Two things that are your call, not the code's.** Termux from F-Droid means
-sideloading, which is a trust decision about F-Droid. GoPro Labs is signed
-firmware from GoPro, so it is not a security risk, but it is experimental and
-the risk is instability, reversible by reflashing stock.
+**Two things that are your call, not the code's.** Installing the APK means
+sideloading, which is a trust decision about this project and its signing key.
+GoPro Labs is signed firmware from GoPro, so it is not a security risk, but it
+is experimental and the risk is instability, reversible by reflashing stock.
 
 ---
 
