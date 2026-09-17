@@ -299,6 +299,8 @@ The UI is just a client. Everything is available directly. All POSTs require
 | POST | `/api/reference` | `{"x1":..,"y1":..,"x2":..,"y2":..,"inches":46}` |
 | POST | `/api/trigger` | `{"seconds":3}` |
 | POST | `/api/clear` | wipe the session |
+| POST | `/api/camera/test` | run the shutter and stream test against the camera; results appear in `/api/state` as `diag`, one line per step |
+| GET | `/api/log` | the last 200 engine log lines, for a phone with no logcat |
 
 The server binds loopback. Run with `--lan` if you want a laptop on the same
 network to open it; that prints a token you must send as `X-FlightPath-Token`

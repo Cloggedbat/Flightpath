@@ -133,6 +133,9 @@ class Worker:
         self._misses = 0                 # consecutive failed polls
         self._baselined = False          # seen holds everything already on the card
         self._calib_started = 0.0        # monotonic() when a calibration capture began
+        self.diag_log: list[str] = []    # camera test output, one line per step, newest last
+        self._diag_running = False
+        self._ring: list[str] = []       # last 200 engine log lines, served at /api/log
 
         if os.path.exists(settings.session_path):
             try:
@@ -184,6 +187,7 @@ class Worker:
                 "shot_count": len(self.session.shots),
                 "club_summary": self.session.club_summary(),
                 "last_error": self.last_error,
+                "diag": list(self.diag_log),
             }
 
     def set_mode(self, mode: str) -> None:
@@ -399,6 +403,161 @@ class Worker:
             self.client.stop_preview()
         return {"ok": True}
 
+    # ---------- the phone as its own test rig ----------
+
+    def _note(self, msg: str) -> None:
+        """One engine log line. Goes to the ring served at /api/log, and to the
+        camera test panel while a test is running. No lock: list.append is
+        atomic and callers may already hold self._lock."""
+        line = f"{time.strftime('%H:%M:%S')} {msg}"
+        self._ring.append(line)
+        if len(self._ring) > 200:
+            del self._ring[:-200]
+        if self._diag_running:
+            self.diag_log.append(line)
+            if len(self.diag_log) > 200:
+                del self.diag_log[:-200]
+
+    def log_lines(self) -> list[str]:
+        return list(self._ring)
+
+    def begin_diagnostic(self) -> bool:
+        """Claim the camera test. False when one is already running."""
+        if self._diag_running:
+            return False
+        self._diag_running = True
+        self.diag_log.clear()
+        return True
+
+    @staticmethod
+    def _udp_listen(port: int, seconds: int) -> tuple[int | None, int | None, str]:
+        """Bind UDP `port` the way Media3 does (0.0.0.0, in this network-bound
+        process) and count what arrives. Slots of one second, so the fake clock
+        in tests cannot stall it; stops after `seconds` idle slots or 500
+        datagrams. Returns (count, bytes, first four bytes as hex) or
+        (None, None, reason) if the port could not be bound."""
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(1.0)
+        try:
+            s.bind(("0.0.0.0", port))
+        except OSError as exc:
+            s.close()
+            return None, None, f"could not bind port {port}: {exc}"
+        n = total = 0
+        first = b""
+        idle = 0
+        try:
+            while idle < max(1, int(seconds)) and n < 500:
+                try:
+                    data, _ = s.recvfrom(65536)
+                except socket.timeout:
+                    idle += 1
+                    continue
+                except OSError as exc:
+                    return n, total, f"receive failed after {n}: {exc}"
+                n += 1
+                total += len(data)
+                if not first:
+                    first = data[:4]
+        finally:
+            s.close()
+        return n, total, first.hex(" ")
+
+    def camera_diagnostic(self) -> None:
+        """Run the experiments a developer would run with curl, against the real
+        camera, and write one line per step into the wizard. This exists
+        because the phone has no logcat we can reach and every guess used to
+        cost a build."""
+        try:
+            self._note("camera test started")
+
+            # 1. What answers, on which port, and the firmware.
+            try:
+                res = self.client.probe(timeout=3.0)
+                for line in res.summary().splitlines():
+                    self._note(line)
+            except Exception as exc:                       # noqa: BLE001
+                self._note(f"probe failed: {type(exc).__name__}: {exc}")
+
+            # 2. Shutter, watched through the camera's state, not its reply.
+            if not self.begin_trigger():
+                self._note("shutter: busy (a shot or capture is in progress), skipped")
+            else:
+                try:
+                    try:
+                        self.stop_preview()
+                    except Exception:                      # noqa: BLE001
+                        pass
+                    before: set[str] = set()
+                    try:
+                        before = {i.path for i in self.client.media_list()}
+                    except Exception as exc:               # noqa: BLE001
+                        self._note(f"media list before: {type(exc).__name__}: {exc}")
+                    try:
+                        self.client.start_recording()
+                        self._note("shutter start: answered")
+                    except Exception as exc:               # noqa: BLE001
+                        self._note(f"shutter start: {exc}")
+                    rec = None
+                    for i in range(6):
+                        time.sleep(0.5)
+                        rec = self.client.is_recording()
+                        self._note(f"  {0.5 * (i + 1):.1f}s encoding = {rec}")
+                        if rec is True:
+                            break
+                    try:
+                        self.client.stop_recording()
+                        self._note("shutter stop: answered")
+                    except Exception as exc:               # noqa: BLE001
+                        self._note(f"shutter stop: {exc}")
+                    idle = None
+                    for _ in range(10):
+                        time.sleep(0.5)
+                        idle = self.client.is_recording()
+                        if idle is not True:
+                            break
+                    self._note(f"after stop: encoding = {idle}"
+                               + ("  STILL RECORDING, press the camera's button" if idle is True else ""))
+                    time.sleep(1.0)
+                    try:
+                        after = {i.path for i in self.client.media_list()}
+                        new = sorted(after - before)
+                        self._note("new clip: " + (", ".join(new) if new else "none"))
+                    except Exception as exc:               # noqa: BLE001
+                        self._note(f"media list after: {type(exc).__name__}: {exc}")
+                finally:
+                    with self._lock:
+                        self.recording = False
+                    try:
+                        self._trigger_lock.release()
+                    except RuntimeError:
+                        pass
+
+            # 3. Stream: does anything reach this process on UDP 8554?
+            if self.preview_on:
+                self.stop_preview()
+                self._note("live view was on, stopped it to free port 8554")
+            r = self.start_preview()
+            self._note("stream start: " + ("ok" if r.get("ok") else f"failed: {r.get('error')}"))
+            if r.get("ok"):
+                n, nbytes, first = self._udp_listen(gopro.PREVIEW_UDP_PORT, 5)
+                if n is None:
+                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {first}")
+                elif n == 0:
+                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: nothing arrived in 5 s. "
+                               "Camera on a menu screen? Not emitting the Open GoPro stream?")
+                else:
+                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {n} datagrams, {nbytes} bytes, "
+                               f"first bytes {first}"
+                               + ("  (MPEG-TS sync byte seen)" if first.startswith("47") else ""))
+                self.stop_preview()
+            self._note("camera test finished")
+        except Exception as exc:                           # noqa: BLE001
+            self._note(f"camera test crashed: {type(exc).__name__}: {exc}")
+        finally:
+            self._diag_running = False
+
     def configure_camera(self) -> dict:
         """Put the camera into 1080p240 Linear so the user does not have to."""
         try:
@@ -510,6 +669,7 @@ class Worker:
             # with an error while it is busy (just after a recording, or when
             # the GoPro Quik app is also talking to it). Three in a row is.
             self._misses += 1
+            self._note(f"camera poll {self._misses}/3 failed: {type(exc).__name__}: {exc}")
             with self._lock:
                 self.last_error = (
                     f"camera poll {self._misses}/3 failed: {type(exc).__name__}: {exc}"
@@ -551,6 +711,7 @@ class Worker:
         try:
             items = self.client.media_list()
         except Exception as exc:                           # noqa: BLE001
+            self._note(f"media list: {type(exc).__name__}: {exc}")
             with self._lock:
                 self.last_error = f"media list: {type(exc).__name__}: {exc}"
                 if not self._baselined:

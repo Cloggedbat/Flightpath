@@ -126,6 +126,7 @@
   .note b { color: var(--ink); }
   .err { border-left-color: var(--bad); font-family: var(--mono); font-size: 12px;
          white-space: pre-wrap; word-break: break-word; }
+  .diag { border-left-color: var(--accent); user-select: text; -webkit-user-select: text; }
   /* calibration sheet */
   .sheet { position: fixed; inset: 0; background: var(--ground);
            z-index: 50; overflow-y: auto;
@@ -310,6 +311,14 @@
     <div class="note err" id="err"></div>
   </section>
 
+  <section id="logSec">
+    <h2>Log</h2>
+    <div class="btnRow">
+      <button class="sec" id="logShow" style="flex:1">Show log</button>
+    </div>
+    <div class="note err diag" id="logBody" hidden></div>
+  </section>
+
 </div>
 
 <div class="sheet" id="calibSheet" hidden>
@@ -335,8 +344,10 @@
 
       <div class="connectBox" id="w1help" hidden>
         <p><b>1. On the camera:</b> swipe down, Preferences, Connections, Connect Device,
-          <b>GoPro App</b>. Leave it on that screen. It shows the network name
-          (GP&hellip;) and password.</p>
+          <b>GoPro App</b>. Note the network name (GP&hellip;) and password it shows.
+          <b>Once the phone has joined, press the camera's Mode button to get back to
+          the shooting screen.</b> WiFi stays on. The camera will not record or
+          preview while it is sitting in a menu.</p>
         <p><b>2. On the phone:</b> tap below, pick the GP&hellip; network, enter the
           password. When Android says no internet, tap <b>keep connected</b>.</p>
         <div id="nativeConnect" hidden>
@@ -377,6 +388,10 @@
         <button class="prim" id="w1apply">Apply camera settings</button>
       </div>
       <p class="calibStat" id="w1stat"></p>
+      <div class="btnRow" style="margin-top:8px">
+        <button class="sec" id="w1test" style="flex:1">Test camera</button>
+      </div>
+      <div class="note err diag" id="w1diag" hidden></div>
       <div class="btnRow" style="margin-top:8px">
         <button class="sec" id="w1next" style="flex:1">Next: position</button>
       </div>
@@ -647,15 +662,22 @@
   }
   function wizRenderCamera(s) {
     if (!s) return;
+    // The camera test log renders even if the connection drops mid-test.
+    if (s.diag && s.diag.length) {
+      $("w1diag").hidden = false;
+      $("w1diag").textContent = s.diag.join("\n");
+    }
     var cs = s.camera_settings || {};
     mark("w1conn", s.camera_ok ? "connected" : "not connected", !!s.camera_ok);
     $("w1help").hidden = !!s.camera_ok;
     if (!s.camera_ok) {
       ["w1res", "w1fps", "w1lens", "w1hs"].forEach(function (id) { mark(id, "?", null); });
       $("w1apply").disabled = true;
+      $("w1test").disabled = true;
       return;
     }
     $("w1apply").disabled = false;
+    $("w1test").disabled = false;
     mark("w1res",  cs.resolution == null ? "?" : String(cs.resolution), cs.resolution === "1080p");
     mark("w1fps",  cs.fps == null ? "?" : cs.fps + " fps", cs.fps === 240);
     var lensOk = cs.lens === "Linear" || cs.lens === "Linear + Horizon";
@@ -691,6 +713,21 @@
   $("openCalib2").addEventListener("click", function () { calShow(true, 1); });
   $("w1cancel").addEventListener("click", function () { calShow(false); });
   $("w1next").addEventListener("click", function () { wizGo(2); });
+  $("w1test").addEventListener("click", function () {
+    $("w1test").disabled = true;
+    $("w1diag").hidden = false;
+    $("w1diag").textContent = "Testing the camera. About 20 seconds. Keep it on the shooting screen.";
+    post("/api/camera/test", {}).then(function (r) {
+      if (r && r.error) { $("w1diag").textContent = r.error; $("w1test").disabled = false; }
+    }).catch(function () { $("w1diag").textContent = "no reply from the engine"; $("w1test").disabled = false; });
+  });
+  $("logShow").addEventListener("click", function () {
+    fetch("/api/log").then(function (r) { return r.json(); }).then(function (r) {
+      $("logBody").hidden = false;
+      var lines = (r && r.lines) || [];
+      $("logBody").textContent = lines.length ? lines.join("\n") : "(log is empty)";
+    }).catch(function () { $("logBody").hidden = false; $("logBody").textContent = "no reply from the engine"; });
+  });
   $("w2back").addEventListener("click", function () { wizGo(1); });
   $("w2next").addEventListener("click", function () { wizGo(3); });
   $("calCancel").addEventListener("click", function () { wizGo(2); });

@@ -166,6 +166,10 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(selftest.run())
         if path == "/api/probe":
             return self._json({"summary": self.worker.client.probe().summary()})
+        if path == "/api/log":
+            # The phone has no logcat we can reach. This is the last 200 engine
+            # log lines, loopback only like everything else.
+            return self._json({"lines": self.worker.log_lines()})
         if path.startswith("/ui/"):
             name = os.path.basename(path)
             ctype = "text/css" if name.endswith(".css") else "application/javascript"
@@ -220,6 +224,14 @@ class _Handler(BaseHTTPRequestHandler):
             threading.Thread(
                 target=self.worker.capture_reference_frame, args=(secs,), daemon=True
             ).start()
+            return self._json({"ok": True})
+
+        if path == "/api/camera/test":
+            # Runs the shutter and stream experiments against the real camera
+            # and writes what happened into the snapshot, one line per step.
+            if not self.worker.begin_diagnostic():
+                return self._json({"error": "a camera test is already running"}, 409)
+            threading.Thread(target=self.worker.camera_diagnostic, daemon=True).start()
             return self._json({"ok": True})
 
         if path == "/api/camera/configure":

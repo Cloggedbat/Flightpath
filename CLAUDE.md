@@ -119,6 +119,16 @@ sent with the same short timeout and retried up to three times until the
 camera is idle; if it never is, the message says to press the camera's
 button. _call() errors now name every URL tried, with its port.
 
+0.1.10 also makes the phone its own test rig, because adb never came up and
+every guess about the camera cost a build. The wizard's Camera step has a
+Test camera button that probes the endpoints, fires the shutter and watches
+the camera's state, checks whether a new clip appeared, starts the preview
+and counts what reaches UDP 8554 in this process, and prints one line per
+step. The bottom of the page has Show log, backed by GET /api/log with the
+last 200 engine lines. The wizard no longer tells the user to leave the
+camera on the WiFi menu; it says to press Mode and return to the shooting
+screen, since a camera in a menu neither records nor previews.
+
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
 - Tap-to-calibrate scale (0.1%), drop-test readout solve, rolling-shutter correction.
