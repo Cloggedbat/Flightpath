@@ -1,5 +1,5 @@
 {
-  "versionCode": 12,
-  "versionName": "0.1.11",
-  "notes": "Capture works. The HERO9 records even though the shutter command errors, and its HTTP server goes silent while recording, so the app now records the full window and confirms by the new clip rather than by the camera's reply. It keeps sending stop until the camera is idle, so it is never left recording. The camera test also reports whether the preview is really MPEG-TS."
+  "versionCode": 13,
+  "versionName": "0.1.12",
+  "notes": "Capture records and downloads the clip, then when it cannot decode it the app now says why: the clip name, size, codec (fourcc) and whether OpenCV opened it. If the codec is HEVC (hvc1/hev1) the phone's OpenCV cannot decode it; set the camera to H.264. This is the answer to whether the phone can decode the camera's video at all."
 }

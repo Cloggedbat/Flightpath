@@ -1,0 +1,5 @@
+# Deploy everything in updates/, including the APK that the repo .gitignore
+# (*.apk) excludes. Negations re-include it so the server has an APK to serve.
+!FlightPath.apk
+!public/FlightPath.apk
+!*.apk

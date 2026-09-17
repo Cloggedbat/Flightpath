@@ -49,7 +49,23 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.11, versionCode 12.
+App version 0.1.12, versionCode 13.
+
+0.1.12: capture now records and downloads a real clip (the 0.1.11 shutter fix
+works), but decoding it with the APK's OpenCV failed with "could not decode
+the clip". The error now reports the clip name, size, codec fourcc and whether
+OpenCV opened the file, so we know whether it is the codec (the APK's OpenCV
+4.5.1.48 has no FFmpeg and likely cannot do HEVC, which is what the HERO9
+records at high bit rates) or a bad download. If HEVC, set the camera to H.264.
+This is NOT-proven item 1 finally being answered on a real clip.
+
+An over-the-air update server is deployed on Railway at
+https://flightpath-updates-production.up.railway.app for AJ's own remote
+testing (owner lifted the freeze on Railway to iterate while away from this
+PC). The release loop: bump version, build, copy the APK to
+updates/public/FlightPath.apk, `railway up` from updates/. The phone's in-app
+updater pulls it over cellular. updates/.railwayignore re-includes the
+gitignored APK so it deploys.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are

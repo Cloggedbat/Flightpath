@@ -348,10 +348,25 @@ class Worker:
             self.seen.add(item.path)
 
             cap = cv2.VideoCapture(path)
+            opened = cap.isOpened()
+            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC)) if opened else 0
+            codec = "".join(chr((fourcc >> (8 * i)) & 0xFF) for i in range(4)).strip("\x00 ") or "?"
             ok, frame = cap.read()
             cap.release()
             if not ok:
-                stage("failed", "could not decode the clip")
+                # This is NOT-proven item 1 answering itself on the real clip.
+                # Say exactly what failed so we know if it is the codec (the
+                # APK's OpenCV has no FFmpeg and may not do HEVC), a truncated
+                # download, or an empty file. The camera's clips are HEVC at
+                # high bit rates unless Video Compression is set to H.264.
+                size = os.path.getsize(path) if os.path.exists(path) else 0
+                msg = (f"could not decode the clip ({item.name}, {size // 1024} KB, "
+                       f"codec {codec}, opened={opened}). "
+                       "If codec is hvc1/hev1 the phone's OpenCV cannot do HEVC: "
+                       "set the camera to H.264 (Preferences, General, Video "
+                       "Compression) and capture again.")
+                self._note(msg)
+                stage("failed", msg)
                 return
 
             if self.settings.lens_model_path:
