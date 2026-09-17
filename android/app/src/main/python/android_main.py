@@ -43,7 +43,14 @@ def stop() -> None:
     httpd = _state.pop("httpd", None)
     worker = _state.pop("worker", None)
     if httpd:
-        httpd.shutdown()
+        try:
+            httpd.shutdown()
+        finally:
+            # shutdown() only stops the loop. The listening socket stays open
+            # until this, and the Python process outlives the Activity, so
+            # without it the next start() fails with "Address already in use"
+            # and the user sees a blank screen.
+            httpd.server_close()
     if worker:
         worker.stop()
 

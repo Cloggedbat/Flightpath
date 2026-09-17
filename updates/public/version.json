@@ -1,5 +1,5 @@
 {
-  "versionCode": 14,
-  "versionName": "0.1.13",
-  "notes": "Clips decode on the phone's own hardware decoder. The OpenCV inside the app turned out to be unable to return a single frame on this phone, for H.264 and HEVC alike, so setting the camera to H.264 would not have helped. The wizard's Engine row now says which decoder answered. Open the wizard and read the Engine row: it should say ok (H.264 + HEVC, ...). Also fixed: a download cut short by WiFi was being saved as a complete clip."
+  "versionCode": 15,
+  "versionName": "0.1.14",
+  "notes": "Two fixes from the first 0.1.13 session on the phone. Backing out of the app and reopening it no longer gives a blank screen with Address already in use: the engine now releases port 8080 when the app closes. Live view no longer fails with HTTP 409 when the camera thinks a stream is still running; the app stops it and tries once more. Next step: on the Camera step tap Apply camera settings and check the panel reads 1080p, 240 fps, Linear, HyperSmooth Off."
 }

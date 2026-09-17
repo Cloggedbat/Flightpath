@@ -255,7 +255,19 @@ class GoProClient:
         The camera must be idle: starting the shutter kills the stream, so the
         worker stops it before every capture and the UI restarts it after.
         """
-        self._call("stream_start")
+        try:
+            self._call("stream_start")
+        except urllib.error.HTTPError as exc:
+            # 409 Conflict is the camera saying "busy": already streaming (a
+            # stop that never reached it while it was unresponsive after a
+            # shutter), or still recording. A stop and one more start clears
+            # the first case. The second still fails, and the UI already tells
+            # the user the camera must not be recording.
+            if exc.code != 409:
+                raise
+            self.stop_preview()
+            time.sleep(0.5)
+            self._call("stream_start")
 
     def stop_preview(self) -> None:
         # Never fatal. A resolved path raises raw HTTPError/URLError rather

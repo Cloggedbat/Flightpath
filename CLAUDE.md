@@ -49,9 +49,30 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.13, versionCode 14.
+App version 0.1.14, versionCode 15.
 
-0.1.13 answers NOT-proven item 1 from the binary, not the phone. The exact
+0.1.14: on 2026-09-17 at 17:19 the S22 Ultra's Engine row read "ok (H.264 +
+HEVC, MediaCodec)". ClipDecoder.kt decodes both codecs on the phone and
+the tracker finds the ball through it. Old NOT-proven item 1 is closed; the
+camera stays on HEVC. Two fixes from that first session on the phone.
+One: backing out of the app and reopening it gave a blank screen and
+"Engine failed to start: OSError: [Errno 98] Address already in use".
+android_main.stop() called httpd.shutdown(), which stops the serve loop
+but leaves the socket listening, and the Python process outlives the
+Activity, so the next start() could not bind 8080. It now calls
+server_close() as well. Two: the Position step's Live view failed with
+"HTTP Error 409: Conflict". That is the Open GoPro stream/start endpoint
+existing on this HERO9 (unlike the shutter, which 404s) and refusing
+because the camera thought it was busy, most likely a stream still marked
+on from the camera test, whose stop was sent while the camera was
+unresponsive after the shutter. start_preview() now answers a 409 with a
+stop and one retry. Also seen, not yet understood: right after the camera
+test, the Camera step read all four settings as raw 0 (Resolution "code 0",
+240 fps, Lens Wide, HyperSmooth Off). Either the camera's state was stale
+after the shutter or the camera really is at those values. Apply camera
+settings is the next read and its problems list says which.
+
+0.1.13 answers old NOT-proven item 1 from the binary, not the phone. The exact
 cv2.so that ships in the APK (android/app/build/python/pip/debug/common/cv2/)
 embeds its build configuration: the Video I/O section is empty apart from
 one backend, ANDROID_MEDIANDK. OpenCV 4.5.1's MediaNDK backend opens the
@@ -181,6 +202,8 @@ camera on the WiFi menu; it says to press Mode and return to the shooting
 screen, since a camera in a menu neither records nor previews.
 
 Proven:
+- ClipDecoder.kt decodes H.264 and HEVC on the S22 Ultra and the tracker
+  runs on its frames: Engine row "ok (H.264 + HEVC, MediaCodec)", 2026-09-17.
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
 - Tap-to-calibrate scale (0.1%), drop-test readout solve, rolling-shutter correction.
 - Security hardening verified against a hostile fake camera.
@@ -194,17 +217,14 @@ Proven:
   status but 404s on both media list paths.
 
 NOT proven (in order of importance):
-1. That ClipDecoder.kt returns frames on the S22 Ultra. The APK's OpenCV
-   cannot (proven from its binary, see 0.1.13), so the phone now decodes
-   through MediaCodec. The wizard's Engine row runs both bundled clips
-   through it and names the decoder. Expected: "ok (H.264 + HEVC,
-   c2.qti.hevc.decoder)" or similar. "cannot decode video, MediaCodec" with
-   an error means the Kotlin needs a fix; Show log will have the reason.
-2. That calibration capture works end to end on the real camera. 0.1.5 said
-   "camera produced no clip" with the card in. 0.1.6 tells apart a shutter the
-   camera ignored from a clip that never appeared; the next attempt says which.
-3. Live view (GoPro UDP MPEG-TS preview via Media3). Works against a fake
-   camera; never seen a real stream.
+1. That calibration capture works end to end on the real camera. 0.1.12
+   recorded and downloaded a real clip and failed only at decode, which
+   0.1.13 fixed, so the next capture should produce a reference frame.
+2. That the camera settings read back 1080p, 240, Linear, HyperSmooth off
+   after Apply. The one read so far, right after a camera test, was all
+   raw zeros; see 0.1.14.
+3. Live view (GoPro UDP MPEG-TS preview via Media3). The camera sends a
+   clean MPEG-TS stream; the phone has never shown a frame of it.
 4. Any real golf ball. Every number ever produced is from a synthetic clip.
 5. Rolling-shutter readout time of the HERO9 (drop test measures it).
 
@@ -212,14 +232,12 @@ NOT proven (in order of importance):
 
 Five steps, about 2 hours total, no new features until they are done:
 
-1. Update to 0.1.13, open the wizard, read the Engine row (5 min, no
-   camera needed). `ok (H.264 + HEVC, <decoder name>)` proceed; the camera
-   can stay on HEVC. `cannot decode video, MediaCodec` means the Kotlin
-   decoder failed on this phone: tap Show log, copy the lines, and fix
-   ClipDecoder.kt from the error. Do not change the camera's codec; that
-   was never the problem.
-2. Connect and auto-configure the camera; read back 1080p, 240, Linear,
-   HyperSmooth off (20 min, indoors). SD card in.
+1. DONE 2026-09-17: Engine row reads ok (H.264 + HEVC, MediaCodec).
+2. Connect, tap Apply camera settings, read back 1080p, 240, Linear,
+   HyperSmooth off (20 min, indoors). SD card in. Do this on a camera that
+   has been idle a minute, not straight after Test camera, which leaves it
+   unresponsive for a while. If it still reads "code 0", screenshot the
+   panel and the problems text under it.
 3. `dropcal`: drop a ball past the lens, get px/m and readout time (30 min).
 4. Hit ONE 7-iron outdoors. Expect roughly 110 to 125 mph at 17 to 21 degrees.
 5. Hit twenty. Check consistency, not accuracy.
@@ -321,7 +339,11 @@ A different key means every user must uninstall.
   without periodic HTTP traffic on the control port.
 - Preview stream: `GET /gopro/camera/stream/start`, camera pushes MPEG-TS
   over UDP to port 8554 of the requester. It stops the moment recording
-  starts; the worker stops it before every capture.
+  starts; the worker stops it before every capture. This endpoint does
+  exist on this HERO9 (unlike the Open GoPro shutter): it answers 409
+  Conflict when the camera is busy, which includes "already streaming"
+  after a stop that never reached it. start_preview() stops and retries
+  once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
 - Camera WiFi is not broadcast until turned on from the camera's menu.
