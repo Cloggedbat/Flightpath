@@ -687,7 +687,9 @@
 
   // Engine self-test: decodes two bundled clips (H.264 + HEVC) and tracks the
   // ball in each. On Android this is what tells us whether the phone's hardware
-  // decoder is reachable, since that OpenCV build has no FFmpeg.
+  // decoder is reachable. The OpenCV in the APK cannot return a frame on this
+  // hardware at all, so the app drives MediaCodec itself; r.decoder says which
+  // one actually answered.
   var engineChecked = false;
   function checkEngine() {
     if (engineChecked) return;
@@ -695,14 +697,15 @@
     mark("w1engine", "testing…", null);
     fetch("/api/selftest").then(function (r) { return r.json(); }).then(function (r) {
       var h = r.clips && r.clips.h264 || {}, v = r.clips && r.clips.hevc || {};
+      var via = r.decoder ? ", " + r.decoder : "";
       if (r.ok && r.hevc_ok) {
-        mark("w1engine", "ok  (H.264 + HEVC, OpenCV " + r.opencv + ")", true);
+        mark("w1engine", "ok  (H.264 + HEVC" + via + ")", true);
       } else if (r.ok) {
         mark("w1engine", "H.264 only, set camera to H.264", false);
         $("w1stat").className = "calibStat bad";
         $("w1stat").textContent = r.advice || "";
       } else {
-        mark("w1engine", "cannot decode video", false);
+        mark("w1engine", "cannot decode video" + via, false);
         $("w1stat").className = "calibStat bad";
         $("w1stat").textContent = (r.advice || "") + " " + (h.error || v.error || "");
       }

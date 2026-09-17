@@ -1,5 +1,5 @@
 {
-  "versionCode": 13,
-  "versionName": "0.1.12",
-  "notes": "Capture records and downloads the clip, then when it cannot decode it the app now says why: the clip name, size, codec (fourcc) and whether OpenCV opened it. If the codec is HEVC (hvc1/hev1) the phone's OpenCV cannot decode it; set the camera to H.264. This is the answer to whether the phone can decode the camera's video at all."
+  "versionCode": 14,
+  "versionName": "0.1.13",
+  "notes": "Clips decode on the phone's own hardware decoder. The OpenCV inside the app turned out to be unable to return a single frame on this phone, for H.264 and HEVC alike, so setting the camera to H.264 would not have helped. The wizard's Engine row now says which decoder answered. Open the wizard and read the Engine row: it should say ok (H.264 + HEVC, ...). Also fixed: a download cut short by WiFi was being saved as a complete clip."
 }

@@ -27,7 +27,7 @@ import json
 
 import cv2
 
-from . import calibrate, cameras, detect, gopro, lens
+from . import calibrate, cameras, detect, gopro, lens, nativecap
 from .session import Session, Shot
 
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
@@ -347,24 +347,21 @@ class Worker:
             path = self.client.download(item, self.settings.clip_dir)
             self.seen.add(item.path)
 
-            cap = cv2.VideoCapture(path)
+            cap = nativecap.open_capture(path)
             opened = cap.isOpened()
-            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC)) if opened else 0
-            codec = "".join(chr((fourcc >> (8 * i)) & 0xFF) for i in range(4)).strip("\x00 ") or "?"
-            ok, frame = cap.read()
+            ok, frame = cap.read() if opened else (False, None)
+            # Read the diagnostics before release() drops the decoder.
+            detail = cap.info() if isinstance(cap, nativecap.NativeCapture) else {}
             cap.release()
             if not ok:
-                # This is NOT-proven item 1 answering itself on the real clip.
-                # Say exactly what failed so we know if it is the codec (the
-                # APK's OpenCV has no FFmpeg and may not do HEVC), a truncated
-                # download, or an empty file. The camera's clips are HEVC at
-                # high bit rates unless Video Compression is set to H.264.
+                # Decoding runs on the phone's own hardware decoder now, so a
+                # failure here is no longer a codec question. Say which decoder
+                # was used and what it said, and give the file size, because a
+                # short file means the transfer was cut off, not the decode.
                 size = os.path.getsize(path) if os.path.exists(path) else 0
+                why = detail.get("error") or getattr(cap, "error", "") or "no frame returned"
                 msg = (f"could not decode the clip ({item.name}, {size // 1024} KB, "
-                       f"codec {codec}, opened={opened}). "
-                       "If codec is hvc1/hev1 the phone's OpenCV cannot do HEVC: "
-                       "set the camera to H.264 (Preferences, General, Video "
-                       "Compression) and capture again.")
+                       f"decoder {nativecap.probe()[1]}, opened={opened}): {why}")
                 self._note(msg)
                 stage("failed", msg)
                 return

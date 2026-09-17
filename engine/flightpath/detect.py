@@ -20,6 +20,19 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from . import nativecap
+
+
+def to_gray(frame: np.ndarray) -> np.ndarray:
+    """Single channel view of a decoded frame.
+
+    The native Android decoder hands back the luma plane already, so a frame
+    can arrive with two dimensions or three depending on the platform.
+    """
+    if frame.ndim == 2:
+        return frame
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
 
 @dataclass
 class Detection:
@@ -120,7 +133,7 @@ def load_frames(path: str, max_frames: int = 400,
     strike. If no change is found and the clip fit inside the cap anyway, fall
     back to the head so short clips behave exactly as before.
     """
-    cap = cv2.VideoCapture(path)
+    cap = nativecap.open_capture(path)
     if not cap.isOpened():
         raise FileNotFoundError(f"could not open video: {path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
@@ -148,7 +161,7 @@ def load_frames(path: str, max_frames: int = 400,
         ok, frame = cap.read()
         if not ok:
             break
-        g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        g = to_gray(frame)
         scanned += 1
         if kept is not None:
             kept.append(g)
@@ -178,7 +191,7 @@ def load_frames(path: str, max_frames: int = 400,
         return kept, fps
     if scanned <= max_frames:
         # Short clip with no clear change: exactly what window=False returns.
-        cap = cv2.VideoCapture(path)
+        cap = nativecap.open_capture(path)
         frames = _read_head(cap, max_frames)
         cap.release()
         if frames:
@@ -194,7 +207,7 @@ def _read_head(cap, max_frames: int) -> list[np.ndarray]:
         ok, frame = cap.read()
         if not ok:
             break
-        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        frames.append(to_gray(frame))
     return frames
 
 

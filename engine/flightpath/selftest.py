@@ -3,8 +3,12 @@ without a camera, a range, or a golf ball.
 
 Two tiny clips ship inside the package: one H.264, one HEVC (what the HERO9
 records at 1080p240). Each is a synthetic 100 mph ball. The test decodes both
-and runs the real tracker. On Android this is the moment of truth for the
-OpenCV build, which has no FFmpeg and relies on the phone's hardware decoder.
+and runs the real tracker.
+
+On Android this is the moment of truth for the decode path. It is no longer a
+question about OpenCV: the OpenCV in the APK cannot return a frame on this
+hardware at all, so the app drives MediaCodec itself through ClipDecoder.kt.
+This test says which decoder answered and whether the tracker then worked.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import tempfile
 
 import cv2
 
-from . import calibrate, detect
+from . import calibrate, detect, nativecap
 
 TRUE_MPH = 100.0
 PX_PER_M = 150.0
@@ -35,8 +39,19 @@ def _clip_path(name: str) -> str | None:
     return path
 
 
+def _backend_name(cap) -> str:
+    if isinstance(cap, nativecap.NativeCapture):
+        return str(cap.info().get("decoder") or "MediaCodec")
+    try:
+        return cap.getBackendName()
+    except Exception:                              # noqa: BLE001
+        return "opencv"
+
+
 def run() -> dict:
-    out = {"opencv": cv2.__version__, "clips": {}, "ok": False}
+    usable, decoder = nativecap.probe()
+    out = {"opencv": cv2.__version__, "decoder": decoder,
+           "native": usable, "clips": {}, "ok": False}
     any_ok = False
     for name in ("h264", "hevc"):
         r: dict = {"decoded_frames": 0, "opened": False, "tracked": False}
@@ -46,12 +61,21 @@ def run() -> dict:
                 r["error"] = "clip missing from package"
                 out["clips"][name] = r
                 continue
-            cap = cv2.VideoCapture(path)
+            cap = nativecap.open_capture(path)
             r["opened"] = bool(cap.isOpened())
-            r["backend"] = cap.getBackendName() if r["opened"] else None
+            r["backend"] = _backend_name(cap) if r["opened"] else None
+            # One real frame, which is the step that used to fail on the phone.
+            first_ok = bool(cap.read()[0]) if r["opened"] else False
+            r["first_frame"] = first_ok
+            if isinstance(cap, nativecap.NativeCapture):
+                r["detail"] = cap.info()
             cap.release()
             if not r["opened"]:
-                r["error"] = "VideoCapture could not open the file (no decoder for this codec)"
+                r["error"] = "could not open the file"
+                out["clips"][name] = r
+                continue
+            if not first_ok:
+                r["error"] = "opened but returned no frame"
                 out["clips"][name] = r
                 continue
             frames, _ = detect.load_frames(path, window=True)
@@ -82,8 +106,8 @@ def run() -> dict:
     hevc = out["clips"].get("hevc", {})
     out["hevc_ok"] = bool(hevc.get("tracked"))
     if not out["ok"]:
-        out["advice"] = ("This device cannot decode video with the bundled OpenCV. "
-                         "The app will need a native decoder before it can measure shots.")
+        out["advice"] = ("This device decoded neither test clip, so it cannot measure "
+                         "shots yet. Send the Show log output from the wizard.")
     elif not out["hevc_ok"]:
         out["advice"] = ("H.264 decodes but HEVC does not. Set the HERO9 to H.264 "
                          "(Preferences > General > Video Compression > H.264 + HEVC).")

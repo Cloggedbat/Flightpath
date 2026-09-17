@@ -443,6 +443,14 @@ class GoProClient:
                     fh.write(chunk)
                     if progress:
                         progress(got, item.size, time.time() - started)
+                # A dropped WiFi connection ends the read with no error, and a
+                # half a clip decodes just far enough to give a wrong answer.
+                # The media list already told us how big the file is.
+                if item.size and got < item.size:
+                    raise GoProError(
+                        f"{name}: transfer ended early, {got} of {item.size} bytes. "
+                        "Move the phone closer to the camera and try again."
+                    )
             os.replace(tmp, dest)
         except BaseException:
             # Never leave a .part behind to accumulate on a phone.

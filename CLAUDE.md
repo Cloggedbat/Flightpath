@@ -47,9 +47,39 @@ DSP and hardware do not transfer to a camera.
 Never edit `android/app/src/main/python/flightpath/` directly. Edit `engine/`
 and run `./sync-engine.sh` (Git Bash on Windows).
 
-## Current state (2026-09-16)
+## Current state (2026-09-17)
 
-App version 0.1.12, versionCode 13.
+App version 0.1.13, versionCode 14.
+
+0.1.13 answers NOT-proven item 1 from the binary, not the phone. The exact
+cv2.so that ships in the APK (android/app/build/python/pip/debug/common/cv2/)
+embeds its build configuration: the Video I/O section is empty apart from
+one backend, ANDROID_MEDIANDK. OpenCV 4.5.1's MediaNDK backend opens the
+file and creates a MediaCodec fine, but retrieveFrame converts a frame only
+when the decoder reports colour format 19 or 21. Qualcomm and Samsung
+decoders report a vendor format, so it logs "Unsupported video format" and
+read() returns False on every frame. That is the 0.1.12 "could not decode
+the clip". It is not a codec problem: H.264 and HEVC fail identically, and
+the fourcc it reported was always "?" because that backend does not
+implement CAP_PROP_FOURCC. Setting the camera to H.264 would have changed
+nothing. Chaquopy offers no other OpenCV (only 4.1.2.30 and 4.5.1.48), and
+OpenCV 4.10 still has the same two-format limit, so there was no upgrade path.
+
+The fix is ClipDecoder.kt: MediaExtractor plus MediaCodec configured for
+COLOR_FormatYUV420Flexible, reading frames through getOutputImage(), which
+normalises any vendor layout and carries the crop rect (1080p decodes into
+a 1088-row buffer). It returns only the luma plane, because every consumer
+in the engine converts to grayscale as its first act. Python reaches it via
+flightpath/nativecap.py, which wraps it in the slice of the VideoCapture API
+the engine uses and falls back to cv2.VideoCapture on a PC or if the native
+open fails. detect.py, worker.py and selftest.py go through
+nativecap.open_capture(); detect.to_gray() accepts 2-D or 3-D frames. The
+Python half is proven on the PC by a fake-Chaquopy harness (23 checks,
+frames bit-identical to the cv2 path, tracked speed identical). The Kotlin
+half is compiled but has not yet run on the phone. The wizard's Engine row
+now names the decoder that answered. Also fixed: a download cut short by a
+WiFi drop was saved as a complete clip; gopro.download() now checks the
+byte count against the media list.
 
 0.1.12: capture now records and downloads a real clip (the 0.1.11 shutter fix
 works), but decoding it with the APK's OpenCV failed with "could not decode
@@ -164,9 +194,12 @@ Proven:
   status but 404s on both media list paths.
 
 NOT proven (in order of importance):
-1. Whether OpenCV inside the APK can decode the camera's H.264/HEVC video.
-   The Camera step of the wizard shows an "Engine" row that answers this.
-   The row has been on screen but its value has not been read back yet.
+1. That ClipDecoder.kt returns frames on the S22 Ultra. The APK's OpenCV
+   cannot (proven from its binary, see 0.1.13), so the phone now decodes
+   through MediaCodec. The wizard's Engine row runs both bundled clips
+   through it and names the decoder. Expected: "ok (H.264 + HEVC,
+   c2.qti.hevc.decoder)" or similar. "cannot decode video, MediaCodec" with
+   an error means the Kotlin needs a fix; Show log will have the reason.
 2. That calibration capture works end to end on the real camera. 0.1.5 said
    "camera produced no clip" with the card in. 0.1.6 tells apart a shutter the
    camera ignored from a clip that never appeared; the next attempt says which.
@@ -179,10 +212,12 @@ NOT proven (in order of importance):
 
 Five steps, about 2 hours total, no new features until they are done:
 
-1. Install the APK, open the wizard, read the Engine row (15 min, indoors).
-   `ok (H.264 + HEVC)` proceed. `H.264 only` proceed and set the HERO9 to
-   H.264 in Preferences, General, Video Compression. `cannot decode video`
-   means the CV has to move (native MediaCodec decoder, or a server).
+1. Update to 0.1.13, open the wizard, read the Engine row (5 min, no
+   camera needed). `ok (H.264 + HEVC, <decoder name>)` proceed; the camera
+   can stay on HEVC. `cannot decode video, MediaCodec` means the Kotlin
+   decoder failed on this phone: tap Show log, copy the lines, and fix
+   ClipDecoder.kt from the error. Do not change the camera's codec; that
+   was never the problem.
 2. Connect and auto-configure the camera; read back 1080p, 240, Linear,
    HyperSmooth off (20 min, indoors). SD card in.
 3. `dropcal`: drop a ball past the lens, get px/m and readout time (30 min).
