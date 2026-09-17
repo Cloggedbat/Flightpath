@@ -498,6 +498,11 @@ class Worker:
                 self.camera_note = "connected"
             calibrating = (self.calib_stage in ("recording", "fetching")
                            and time.monotonic() - self._calib_started < 60.0)
+            previewing = self.preview_on
+        if previewing:
+            # The legacy preview stream dies without traffic on the camera's
+            # control port. Cheap and best effort.
+            self.client.stream_keep_alive()
         if calibrating:
             # A calibration capture is in flight on another thread and owns
             # whatever clip appears next; it adds it to seen once downloaded.

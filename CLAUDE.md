@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.8, versionCode 9.
+App version 0.1.9, versionCode 10.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -97,6 +97,16 @@ keeps 24 frames before and 60 after the first hard change; memory is bounded
 by that window, not by clip length. The drop test still reads the head, as
 it must. Record a shot is 6 s. Proven on synthetic clips only, including one
 with the strike 3 s in.
+
+0.1.9 sends legacy gpControl commands to port 80. The camera runs two HTTP
+servers: Open GoPro, the media list and downloads on 8080; legacy control
+on 80. The client had put everything on 8080, so every legacy fallback hung
+until timeout instead of answering. On this HERO9, which 404s the Open GoPro
+shutter, that was "shutter start timed out" and a black live view. The
+keep_alive fallback that used to be a sleep command is now a status GET, and
+the worker GETs the control port every tick while a preview is on, which the
+legacy stream needs to stay up. Source: GoPro's own issue tracker and the
+community HERO9 API docs; the Open GoPro spec site could not be read.
 
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
@@ -210,6 +220,16 @@ A different key means every user must uninstall.
   (1080p = 9), 3 fps (240 = 0, 120 = 1), 121 lens (Linear = 4, Linear +
   Horizon = 8, which is what the camera offers at 240), 135 HyperSmooth
   (off = 0). Preset group 1000 = video.
+- Legacy gpControl is on port 80, not 8080: `http://10.5.5.9/gp/gpControl/...`.
+  The media list and downloads (`/gp/gpMediaList`, `/videos/DCIM/...`) stay on
+  8080. A gpControl command sent to 8080 hangs until timeout, it does not 404.
+- This HERO9 (Open GoPro firmware, 1.70 or later) answers Open GoPro state and
+  media but 404s the Open GoPro shutter. The shutter works through legacy
+  gpControl on port 80. Never assume the family that answers `state` answers
+  the rest; `_call()` resolves each endpoint on first use.
+- Legacy preview stream: `GET /gp/gpControl/execute?p1=gpStream&c1=restart`
+  on port 80, MPEG-TS over UDP to port 8554 of the requester. It stops
+  without periodic HTTP traffic on the control port.
 - Preview stream: `GET /gopro/camera/stream/start`, camera pushes MPEG-TS
   over UDP to port 8554 of the requester. It stops the moment recording
   starts; the worker stops it before every capture.

@@ -1,5 +1,5 @@
 {
-  "versionCode": 9,
-  "versionName": "0.1.8",
-  "notes": "Shots are analysed around the strike, wherever it lands in the clip. Before, only the first 1.07 s of each clip was read, so a swing more than a second after the tap was never seen. Record a shot now gives 6 s. From 0.1.7: shutter works on a HERO9 that 404s the Open GoPro shutter path, and the calibration clip is no longer analysed as a shot."
+  "versionCode": 10,
+  "versionName": "0.1.9",
+  "notes": "Legacy GoPro commands now go to port 80, where the camera actually serves them. Fixes the shutter timing out and the black live view on a HERO9 that lacks the Open GoPro shutter. Live view keeps its stream alive. From 0.1.8: shots are analysed around the strike wherever it lands, and Record a shot gives 6 s."
 }

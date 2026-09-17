@@ -38,7 +38,11 @@ ENDPOINTS = {
     "shutter_start": ["/gopro/camera/shutter/start", "/gp/gpControl/command/shutter?p=1"],
     "shutter_stop": ["/gopro/camera/shutter/stop", "/gp/gpControl/command/shutter?p=0"],
     "media_list": ["/gopro/media/list", "/gp/gpMediaList"],
-    "keep_alive": ["/gopro/camera/keep_alive", "/gp/gpControl/command/system/sleep?p=0"],
+    # Legacy has no keep-alive command; any GET on the control port does the
+    # job. The old fallback here was system/sleep?p=0, which only ever failed
+    # to reach the camera because it went to the wrong port. Now that the
+    # port is right, it must never be sent.
+    "keep_alive": ["/gopro/camera/keep_alive", "/gp/gpControl/status"],
     "version": ["/gopro/version", "/gp/gpControl/info"],
     # Live preview: the camera pushes an MPEG-TS/H.264 stream over UDP to
     # port 8554 of whichever client asked for it. Low resolution, aiming only.
@@ -140,7 +144,13 @@ class GoProClient:
     # ---------- plumbing ----------
 
     def _url(self, path: str) -> str:
-        return f"http://{self.host}:{self.port}{path}"
+        # Two servers live on the camera. Open GoPro (/gopro/...), the media
+        # list (/gp/gpMediaList) and file downloads (/videos/DCIM/...) are on
+        # 8080. Legacy control (/gp/gpControl/...) is on port 80 and nothing
+        # else. Sending a gpControl command to 8080 does not 404, it hangs
+        # until the timeout, which is what "shutter start timed out" was.
+        port = 80 if path.startswith("/gp/gpControl") else self.port
+        return f"http://{self.host}:{port}{path}"
 
     def _get(self, path: str, timeout: float | None = None) -> bytes:
         req = urllib.request.Request(self._url(path))
@@ -245,6 +255,15 @@ class GoProClient:
         # an error anyone needs to hear about.
         try:
             self._call("stream_stop")
+        except Exception:                                  # noqa: BLE001
+            pass
+
+    def stream_keep_alive(self) -> None:
+        """The legacy preview stream stops unless the camera keeps seeing HTTP
+        traffic on its control port (documented as "GET every 25 s or so").
+        Best effort, called every worker tick while a preview is on."""
+        try:
+            self._get("/gp/gpControl/status", timeout=2.0)
         except Exception:                                  # noqa: BLE001
             pass
 
