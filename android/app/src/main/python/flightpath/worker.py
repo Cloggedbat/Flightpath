@@ -226,17 +226,22 @@ class Worker:
     def trigger(self, seconds: float = 3.0) -> str:
         """Manual shutter. Call begin_trigger() first to claim it.
 
-        Returns "recorded" on success, otherwise a short reason. Callers must
-        check it: a shutter the camera ignored looks exactly like one that
-        worked, right up until you go looking for the clip.
+        Returns "recorded" once the record-then-stop cycle ran and the camera
+        is idle again, otherwise a short reason. "recorded" does not promise a
+        clip: whether one resulted is confirmed by the caller from the media
+        list, which on this camera is the only reliable signal.
 
-        On the HERO9 the shutter exists only on the legacy control server,
-        and that server acts on the command but does not answer while it is
-        recording. So the command is sent with a short timeout, its exception
-        is set aside, and the camera's state, served by the other server,
-        decides what actually happened. Stop is retried until the camera is
-        really idle: an unstopped camera records until the card fills and
-        leaves a clip that cannot be played.
+        Observed on a real HERO9 (firmware 2.0): the shutter command 404s on
+        the Open GoPro path and errors, times out, or returns 500 on the
+        legacy path, yet the recording still starts. Worse, the camera's whole
+        HTTP stack goes unresponsive *while recording* (state returns 500, then
+        times out, then drops the connection), so state cannot be read to
+        confirm a recording is in progress. It becomes readable again the
+        instant recording ends. So: fire start and ignore the response, record
+        the full window without trusting state, then stop and retry stop until
+        state reports a clean idle. That clean idle is both the proof we
+        stopped and the guard against leaving the camera recording until the
+        card fills.
         """
         seconds = max(0.2, min(float(seconds), 15.0))
         try:
@@ -248,53 +253,40 @@ class Worker:
                 with self._lock:
                     self.last_error = f"live view stop: {exc}"
 
-            t0 = time.monotonic()
-            start_err = ""
+            # Fire start and move on. A 404, a 500, or a timeout here does not
+            # mean it failed; on this camera the recording starts regardless.
             try:
                 self.client.start_recording()
-            except Exception as exc:                       # noqa: BLE001
-                start_err = str(exc)
+            except Exception:                              # noqa: BLE001
+                pass
 
-            # Is it encoding? Up to four reads over two seconds, in case
-            # status lags the shutter.
-            rec = None
-            for _ in range(4):
-                time.sleep(0.5)
-                rec = self.client.is_recording()
-                if rec is True:
-                    break
-            if rec is False or (rec is None and start_err):
-                # Explicitly idle, or no answer AND the command failed: it did
-                # not start. Send a stop anyway in case status is wrong; a
-                # runaway recording is worse than a lost clip.
-                try:
-                    self.client.stop_recording()
-                except Exception:                          # noqa: BLE001
-                    pass
-                msg = ("camera did not start recording. Is it on its shooting "
-                       "screen and in video mode?")
-                if start_err:
-                    msg += f" (shutter: {start_err})"
-                with self._lock:
-                    self.last_error = f"trigger failed: {msg}"
-                return msg
+            # Record the full window. Do NOT poll state to abort early: state
+            # is unreadable during recording, so an early read would be a false
+            # negative on exactly the shots that are working.
+            time.sleep(seconds)
 
-            remaining = seconds - (time.monotonic() - t0)
-            if remaining > 0:
-                time.sleep(remaining)
-
-            # Stop, and make sure it stopped.
-            for _ in range(3):
+            # Stop, and confirm. is_recording() returns None while state is
+            # still unresponsive and a real False once recording has ended, so
+            # a clean False is proof the camera stopped. Keep sending stop
+            # until we see it.
+            for _ in range(6):
                 try:
                     self.client.stop_recording()
                 except Exception:                          # noqa: BLE001
                     pass
                 time.sleep(0.7)
-                if self.client.is_recording() is not True:
-                    return "recorded"
-            msg = "camera is still recording. Press its shutter button to stop it."
+                try:
+                    if self.client.is_recording() is False:
+                        return "recorded"
+                except Exception:                          # noqa: BLE001
+                    pass                                   # state still recovering
+            # Never saw a clean idle across ~4 s of retries. Either the camera
+            # is genuinely stuck recording or this firmware never reports idle.
+            # Say so without crashing the capture.
+            msg = ("sent, but could not confirm the camera stopped. "
+                   "If its red light is on, press the shutter button.")
             with self._lock:
-                self.last_error = f"trigger failed: {msg}"
+                self.last_error = f"trigger: {msg}"
             return msg
         except Exception as exc:                           # noqa: BLE001
             with self._lock:
@@ -347,8 +339,9 @@ class Worker:
                     item = sorted(fresh, key=lambda i: i.mtime)[-1]
                     break
             if item is None:
-                stage("failed", "camera recorded but no new clip appeared in 15 s. "
-                                "Check the camera shows a new video, then try again.")
+                stage("failed", "no new clip appeared. Make sure the camera is on "
+                                "its shooting screen (press Mode), not a menu, then "
+                                "try again.")
                 return
 
             path = self.client.download(item, self.settings.clip_dir)
@@ -434,8 +427,9 @@ class Worker:
         """Bind UDP `port` the way Media3 does (0.0.0.0, in this network-bound
         process) and count what arrives. Slots of one second, so the fake clock
         in tests cannot stall it; stops after `seconds` idle slots or 500
-        datagrams. Returns (count, bytes, first four bytes as hex) or
-        (None, None, reason) if the port could not be bound."""
+        datagrams. Returns (count, bytes, note) where note describes the first
+        bytes and whether the payload looks like MPEG-TS, or (None, None,
+        reason) if the port could not be bound."""
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(1.0)
@@ -444,7 +438,7 @@ class Worker:
         except OSError as exc:
             s.close()
             return None, None, f"could not bind port {port}: {exc}"
-        n = total = 0
+        n = total = ts_sync = 0
         first = b""
         idle = 0
         try:
@@ -459,10 +453,17 @@ class Worker:
                 n += 1
                 total += len(data)
                 if not first:
-                    first = data[:4]
+                    first = data[:8]
+                # MPEG-TS packets are 188 bytes starting with 0x47. Media3's
+                # TsExtractor needs that; report whether the stream provides it.
+                if data[:1] == b"\x47" or data[188:189] == b"\x47":
+                    ts_sync += 1
         finally:
             s.close()
-        return n, total, first.hex(" ")
+        note = f"first bytes {first.hex(' ')}"
+        if n:
+            note += f"; {ts_sync}/{n} look like MPEG-TS (0x47 sync)"
+        return n, total, note
 
     def camera_diagnostic(self) -> None:
         """Run the experiments a developer would run with curl, against the real
@@ -541,16 +542,14 @@ class Worker:
             r = self.start_preview()
             self._note("stream start: " + ("ok" if r.get("ok") else f"failed: {r.get('error')}"))
             if r.get("ok"):
-                n, nbytes, first = self._udp_listen(gopro.PREVIEW_UDP_PORT, 5)
+                n, nbytes, note = self._udp_listen(gopro.PREVIEW_UDP_PORT, 5)
                 if n is None:
-                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {first}")
+                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {note}")
                 elif n == 0:
                     self._note(f"udp {gopro.PREVIEW_UDP_PORT}: nothing arrived in 5 s. "
                                "Camera on a menu screen? Not emitting the Open GoPro stream?")
                 else:
-                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {n} datagrams, {nbytes} bytes, "
-                               f"first bytes {first}"
-                               + ("  (MPEG-TS sync byte seen)" if first.startswith("47") else ""))
+                    self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {n} datagrams, {nbytes} bytes; {note}")
                 self.stop_preview()
             self._note("camera test finished")
         except Exception as exc:                           # noqa: BLE001

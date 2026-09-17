@@ -1,5 +1,5 @@
 {
-  "versionCode": 11,
-  "versionName": "0.1.10",
-  "notes": "The shutter now works on a HERO9 whose control server goes silent while recording: the app sends the command, confirms from the camera's state, and keeps sending stop until the camera is really idle, so it can never again leave the camera recording with an unplayable clip. Errors name the exact URL and port that failed. From 0.1.9: legacy commands go to port 80."
+  "versionCode": 12,
+  "versionName": "0.1.11",
+  "notes": "Capture works. The HERO9 records even though the shutter command errors, and its HTTP server goes silent while recording, so the app now records the full window and confirms by the new clip rather than by the camera's reply. It keeps sending stop until the camera is idle, so it is never left recording. The camera test also reports whether the preview is really MPEG-TS."
 }

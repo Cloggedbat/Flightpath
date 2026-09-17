@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.10, versionCode 11.
+App version 0.1.11, versionCode 12.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -108,16 +108,21 @@ the worker GETs the control port every tick while a preview is on, which the
 legacy stream needs to stay up. Source: GoPro's own issue tracker and the
 community HERO9 API docs; the Open GoPro spec site could not be read.
 
-0.1.10 stops trusting the shutter's HTTP response. With port 80 right, the
-legacy shutter did reach the camera and it recorded, but the legacy server
-does not answer while recording, so the 8 s timeout read as failure, no
-stop was ever sent, and the camera was left recording twice, producing two
-clips it cannot play. trigger() now sends the shutter with a 2 s timeout,
-sets any exception aside, and asks the camera's state (served by the Open
-GoPro server on 8080, which does answer) whether it is encoding. Stop is
-sent with the same short timeout and retried up to three times until the
-camera is idle; if it never is, the message says to press the camera's
-button. _call() errors now name every URL tried, with its port.
+0.1.11 makes capture work. Real-camera evidence: the shutter start 404s on
+Open GoPro and times out or 500s on legacy, the state polls fail with 500,
+timeout and RemoteDisconnected, and then a clip appears. The camera records
+even when every HTTP call around it errors, because its server is simply
+unresponsive during recording. So trigger() no longer reads state to decide
+success. It fires start and ignores the reply, records the full window, then
+sends stop and retries until state recovers to a clean idle (the proof it
+stopped and the guard against a runaway). Whether a clip resulted is decided
+by the caller from the media list, the only reliable signal. capture reports
+"no new clip appeared, make sure the camera is on its shooting screen (press
+Mode), not a menu" when nothing recorded.
+
+0.1.10 had trusted state during recording and so reported working shots as
+"camera did not start", and it left the camera recording twice. Both fixed
+here. _call() errors still name every URL tried, with its port.
 
 0.1.10 also makes the phone its own test rig, because adb never came up and
 every guess about the camera cost a build. The wizard's Camera step has a
@@ -244,13 +249,22 @@ A different key means every user must uninstall.
 - Legacy gpControl is on port 80, not 8080: `http://10.5.5.9/gp/gpControl/...`.
   The media list and downloads (`/gp/gpMediaList`, `/videos/DCIM/...`) stay on
   8080. A gpControl command sent to 8080 hangs until timeout, it does not 404.
-- This HERO9 (Open GoPro firmware, 1.70 or later) answers Open GoPro state and
-  media but 404s the Open GoPro shutter. GoPro's openapi.json lists the HTTP
-  shutter for HERO10 and later only. The shutter works through legacy
-  gpControl on port 80, and that server records on command but does not
-  answer while recording. A shutter timeout is therefore not a failure; the
-  camera's state decides. Never assume the family that answers `state`
-  answers the rest; `_call()` resolves each endpoint on first use.
+- This HERO9 (firmware 2.0) answers Open GoPro state and media but 404s the
+  Open GoPro shutter. GoPro's openapi.json lists the HTTP shutter for HERO10
+  and later only. The shutter works through legacy gpControl on port 80. That
+  command errors, times out, or returns 500 yet still starts the recording,
+  and once recording the camera's WHOLE HTTP stack goes unresponsive (state
+  returns 500, then times out, then drops the connection) until recording
+  ends. So state cannot confirm a recording is in progress; only a new clip in
+  the media list can. `trigger()` records the full window, ignores the
+  shutter's reply, and confirms by clip, sending stop until state recovers to
+  a clean idle. Never assume the family that answers `state` answers the rest;
+  `_call()` resolves each endpoint on first use.
+- Preview stream: on a real test the camera emitted 500 UDP datagrams to the
+  phone, so the camera side works. The first bytes were not 0x47, so the
+  payload may not be the plain MPEG-TS that `LiveView.kt`'s `TsExtractor`
+  expects. The camera test now reports the 0x47 fraction; live view being
+  black is an Android decode problem, not a camera one.
 - Legacy preview stream: `GET /gp/gpControl/execute?p1=gpStream&c1=restart`
   on port 80, MPEG-TS over UDP to port 8554 of the requester. It stops
   without periodic HTTP traffic on the control port.
