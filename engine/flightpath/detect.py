@@ -96,13 +96,29 @@ MAX_DECODE_BYTES = 512 * 1024 * 1024
 
 
 def load_frames(path: str, max_frames: int = 400,
-                max_bytes: int = MAX_DECODE_BYTES) -> tuple[list[np.ndarray], float]:
+                max_bytes: int = MAX_DECODE_BYTES,
+                window: bool = False, pre_frames: int = 24,
+                post_frames: int = 60, max_scan_frames: int = 6000,
+                ) -> tuple[list[np.ndarray], float]:
     """Read a clip into memory. Returns (frames_gray, container_fps).
 
     Capped by BYTES, not just frame count. 400 frames of grayscale 4K is about
     3.3 GB, which is an instant out-of-memory kill on a phone. A frame count
     alone does not bound memory; frame size varies by 16x across the modes
     these cameras offer.
+
+    window=False keeps the head of the clip up to the cap. Right for a drop
+    test, where the ball is moving from frame one, and for short clips.
+
+    window=True is for a struck shot. At 1080p the cap is 258 frames, which
+    is 1.07 s at 240 fps, and a golfer cannot be made to strike inside the
+    first second of a clip. So instead of keeping the head, scan the clip
+    frame by frame with the same rule find_impact_frame uses, hold a ring of
+    `pre_frames` quiet frames, and stop `post_frames` after the first hard
+    change. Memory is bounded by pre + post rather than by clip length: a 6 s
+    clip with the strike at 4 s comes back as an 85 frame window around the
+    strike. If no change is found and the clip fit inside the cap anyway, fall
+    back to the head so short clips behave exactly as before.
     """
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -114,16 +130,72 @@ def load_frames(path: str, max_frames: int = 400,
     if w > 0 and h > 0:
         max_frames = max(8, min(max_frames, max_bytes // max(w * h, 1)))
 
-    frames = []
+    if not window:
+        frames = _read_head(cap, max_frames)
+        cap.release()
+        if not frames:
+            raise ValueError(f"no frames decoded from {path}")
+        return frames, fps
+
+    pre = max(1, min(pre_frames, max_frames // 3))
+    post = max(1, min(post_frames, max_frames - pre))
+    ring: list[np.ndarray] = []
+    energies: list[float] = []
+    kept: list[np.ndarray] | None = None
+    prev = None
+    scanned = 0
+    while scanned < max_scan_frames:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        scanned += 1
+        if kept is not None:
+            kept.append(g)
+            if len(kept) >= pre + 1 + post:
+                break
+            continue
+        if prev is not None:
+            e = float(cv2.absdiff(g, prev).mean())
+            if len(energies) >= 3:
+                arr = np.asarray(energies)
+                floor = float(np.median(arr))
+                spread = float(np.median(np.abs(arr - floor))) or 1e-6
+                if e > floor + max(6.0 * spread, 0.5):
+                    # Same rule as find_impact_frame, applied as we go. The
+                    # ring holds the quiet frames before this one, so the
+                    # caller's find_impact_frame lands here and steps back one.
+                    kept = list(ring) + [g]
+                    continue
+            energies.append(e)
+        ring.append(g)
+        if len(ring) > pre:
+            ring.pop(0)
+        prev = g
+    cap.release()
+
+    if kept is not None:
+        return kept, fps
+    if scanned <= max_frames:
+        # Short clip with no clear change: exactly what window=False returns.
+        cap = cv2.VideoCapture(path)
+        frames = _read_head(cap, max_frames)
+        cap.release()
+        if frames:
+            return frames, fps
+    if not ring:
+        raise ValueError(f"no frames decoded from {path}")
+    return ring, fps
+
+
+def _read_head(cap, max_frames: int) -> list[np.ndarray]:
+    frames: list[np.ndarray] = []
     while len(frames) < max_frames:
         ok, frame = cap.read()
         if not ok:
             break
         frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-    cap.release()
-    if not frames:
-        raise ValueError(f"no frames decoded from {path}")
-    return frames, fps
+    return frames
 
 
 def find_impact_frame(frames: list[np.ndarray], search_from: int = 0) -> int:

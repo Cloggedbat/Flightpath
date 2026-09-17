@@ -608,7 +608,7 @@ class Worker:
             )
         profile = cameras.get(self.settings.camera_profile)
 
-        frames, container_fps = detect.load_frames(path)
+        frames, container_fps = detect.load_frames(path, window=True)
         if self.settings.lens_model_path:
             if self._lens_model is None:
                 self._lens_model = lens.LensModel.load(self.settings.lens_model_path)

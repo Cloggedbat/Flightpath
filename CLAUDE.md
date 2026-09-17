@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.7, versionCode 8.
+App version 0.1.8, versionCode 9.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -86,6 +86,17 @@ downloaded it to the same .part, and the tick then queued a 2 s clip of a
 still club for analysis. While a capture is in flight (calib_stage recording
 or fetching, capped at 60 s so a hung capture cannot stall shots) the tick
 leaves new clips alone.
+
+0.1.8 analyses the strike wherever it lands in the clip. detect.load_frames
+kept only the head of a clip up to a 512 MiB memory cap, which at 1080p is
+258 frames, 1.07 s at 240 fps, while Record a shot recorded 3 s. A golfer
+cannot strike inside the first second after tapping, so every real shot
+would have said "no ball track found" for a reason unrelated to the CV. The
+shot path now scans the clip with the same rule find_impact_frame uses and
+keeps 24 frames before and 60 after the first hard change; memory is bounded
+by that window, not by clip length. The drop test still reads the head, as
+it must. Record a shot is 6 s. Proven on synthetic clips only, including one
+with the strike 3 s in.
 
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.

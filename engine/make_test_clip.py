@@ -19,7 +19,7 @@ INCHES_PER_M = 39.3700787
 
 
 def make_clip(out_path, speed_mph, angle_deg, fps, px_per_m, width, height,
-              n_frames, noise, motion_blur):
+              n_frames, noise, motion_blur, pre_roll=8):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
@@ -47,7 +47,8 @@ def make_clip(out_path, speed_mph, angle_deg, fps, px_per_m, width, height,
     ball_r = max(3.0, (1.68 / INCHES_PER_M) * px_per_m / 2.0)
     x0, y0 = 240.0, float(height - 190)
 
-    pre_roll = 8
+    # pre_roll quiet frames before impact. 8 is enough to test the detector;
+    # hundreds reproduce a real clip where the golfer taps, then addresses.
     for i in range(n_frames):
         frame = base.copy()
 
@@ -158,6 +159,8 @@ def main():
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--noise", type=float, default=3.0)
     ap.add_argument("--motion-blur", type=int, default=4)
+    ap.add_argument("--pre-roll", type=int, default=8,
+                    help="quiet frames before impact; use hundreds to mimic a real tap-then-swing clip")
     args = ap.parse_args()
 
     if args.drop:
@@ -174,7 +177,7 @@ def main():
 
     meta = make_clip(args.out, args.speed_mph, args.angle, args.fps,
                      args.px_per_m, args.width, args.height, args.frames,
-                     args.noise, args.motion_blur)
+                     args.noise, args.motion_blur, pre_roll=args.pre_roll)
     print(f"wrote {args.out}")
     for k, v in meta.items():
         print(f"  {k}: {v}")

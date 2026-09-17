@@ -52,7 +52,7 @@ def _resolve_camera(args):
 
 
 def _analyse_clip(path: str, scale, args):
-    frames, container_fps = detect.load_frames(path)
+    frames, container_fps = detect.load_frames(path, window=True)
     profile, fps_arg, readout, r_lo, r_hi = _resolve_camera(args)
     fps, fps_note = calibrate.effective_fps(container_fps, fps_arg)
 

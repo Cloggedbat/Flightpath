@@ -54,7 +54,7 @@ def run() -> dict:
                 r["error"] = "VideoCapture could not open the file (no decoder for this codec)"
                 out["clips"][name] = r
                 continue
-            frames, _ = detect.load_frames(path)
+            frames, _ = detect.load_frames(path, window=True)
             r["decoded_frames"] = len(frames)
             if len(frames) < 8:
                 r["error"] = f"only {len(frames)} frames decoded"

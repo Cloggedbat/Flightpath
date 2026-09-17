@@ -519,7 +519,7 @@
     busy = true;
     $("shoot").disabled = true;
     $("shoot").textContent = "Recording";
-    post("/api/trigger", { seconds: 3 }).then(function () {
+    post("/api/trigger", { seconds: 6 }).then(function () {
       setTimeout(function () { busy = false; }, 3500);
     });
   });
