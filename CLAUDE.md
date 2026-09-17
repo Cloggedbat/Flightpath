@@ -66,11 +66,12 @@ existing on this HERO9 (unlike the shutter, which 404s) and refusing
 because the camera thought it was busy, most likely a stream still marked
 on from the camera test, whose stop was sent while the camera was
 unresponsive after the shutter. start_preview() now answers a 409 with a
-stop and one retry. Also seen, not yet understood: right after the camera
-test, the Camera step read all four settings as raw 0 (Resolution "code 0",
-240 fps, Lens Wide, HyperSmooth Off). Either the camera's state was stale
-after the shutter or the camera really is at those values. Apply camera
-settings is the next read and its problems list says which.
+stop and one retry. Also seen: right after the camera test, the Camera step
+read all four settings as raw 0 (Resolution "code 0", 240 fps, Lens Wide,
+HyperSmooth Off). AJ confirms Apply camera settings works and always has,
+so that was the camera's state being stale while it recovered from the
+shutter. A settings read straight after Test camera is not to be trusted;
+tap Apply and it reads back correctly.
 
 0.1.13 answers old NOT-proven item 1 from the binary, not the phone. The exact
 cv2.so that ships in the APK (android/app/build/python/pip/debug/common/cv2/)
@@ -204,6 +205,8 @@ screen, since a camera in a menu neither records nor previews.
 Proven:
 - ClipDecoder.kt decodes H.264 and HEVC on the S22 Ultra and the tracker
   runs on its frames: Engine row "ok (H.264 + HEVC, MediaCodec)", 2026-09-17.
+- Apply camera settings puts the HERO9 in 1080p240 Linear, HyperSmooth
+  off, and reads it back. AJ: it has always worked.
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
 - Tap-to-calibrate scale (0.1%), drop-test readout solve, rolling-shutter correction.
 - Security hardening verified against a hostile fake camera.
@@ -220,24 +223,18 @@ NOT proven (in order of importance):
 1. That calibration capture works end to end on the real camera. 0.1.12
    recorded and downloaded a real clip and failed only at decode, which
    0.1.13 fixed, so the next capture should produce a reference frame.
-2. That the camera settings read back 1080p, 240, Linear, HyperSmooth off
-   after Apply. The one read so far, right after a camera test, was all
-   raw zeros; see 0.1.14.
-3. Live view (GoPro UDP MPEG-TS preview via Media3). The camera sends a
+2. Live view (GoPro UDP MPEG-TS preview via Media3). The camera sends a
    clean MPEG-TS stream; the phone has never shown a frame of it.
-4. Any real golf ball. Every number ever produced is from a synthetic clip.
-5. Rolling-shutter readout time of the HERO9 (drop test measures it).
+3. Any real golf ball. Every number ever produced is from a synthetic clip.
+4. Rolling-shutter readout time of the HERO9 (drop test measures it).
 
 ## The active plan
 
 Five steps, about 2 hours total, no new features until they are done:
 
 1. DONE 2026-09-17: Engine row reads ok (H.264 + HEVC, MediaCodec).
-2. Connect, tap Apply camera settings, read back 1080p, 240, Linear,
-   HyperSmooth off (20 min, indoors). SD card in. Do this on a camera that
-   has been idle a minute, not straight after Test camera, which leaves it
-   unresponsive for a while. If it still reads "code 0", screenshot the
-   panel and the problems text under it.
+2. DONE: Apply camera settings works and always has. If the panel shows
+   "code 0" after Test camera, that is a stale read; tap Apply again.
 3. `dropcal`: drop a ball past the lens, get px/m and readout time (30 min).
 4. Hit ONE 7-iron outdoors. Expect roughly 110 to 125 mph at 17 to 21 degrees.
 5. Hit twenty. Check consistency, not accuracy.
