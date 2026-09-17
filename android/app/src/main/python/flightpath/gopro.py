@@ -163,19 +163,23 @@ class GoProClient:
             return {}
         return json.loads(raw.decode("utf-8", "replace"))
 
-    def _call(self, name: str) -> bytes:
-        """Call a logical endpoint, resolving which concrete path works."""
+    def _call(self, name: str, timeout: float | None = None) -> bytes:
+        """Call a logical endpoint, resolving which concrete path works.
+
+        The error names every URL tried, with its port, so a report from a
+        phone with no logcat still says exactly which server did what.
+        """
         if name in self._resolved:
-            return self._get(self._resolved[name])
-        last = None
+            return self._get(self._resolved[name], timeout=timeout)
+        tried = []
         for path in ENDPOINTS[name]:
             try:
-                out = self._get(path)
+                out = self._get(path, timeout=timeout)
                 self._resolved[name] = path
                 return out
             except Exception as exc:                       # noqa: BLE001
-                last = exc
-        raise GoProError(f"no working path for '{name}': {last}")
+                tried.append(f"{self._url(path)}: {exc}")
+        raise GoProError(f"no working path for '{name}': " + "; ".join(tried))
 
     # ---------- discovery ----------
 
@@ -236,10 +240,14 @@ class GoProClient:
             pass
 
     def start_recording(self) -> None:
-        self._call("shutter_start")
+        # Short timeout, fire and forget. On the HERO9 the shutter exists only
+        # on the legacy control server, which acts on the command but does not
+        # answer while recording. The worker confirms via state() rather than
+        # trusting a response that may never come.
+        self._call("shutter_start", timeout=2.0)
 
     def stop_recording(self) -> None:
-        self._call("shutter_stop")
+        self._call("shutter_stop", timeout=2.0)
 
     def start_preview(self) -> None:
         """Ask the camera to stream its live view to us on UDP 8554.

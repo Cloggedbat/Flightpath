@@ -225,6 +225,14 @@ class Worker:
         Returns "recorded" on success, otherwise a short reason. Callers must
         check it: a shutter the camera ignored looks exactly like one that
         worked, right up until you go looking for the clip.
+
+        On the HERO9 the shutter exists only on the legacy control server,
+        and that server acts on the command but does not answer while it is
+        recording. So the command is sent with a short timeout, its exception
+        is set aside, and the camera's state, served by the other server,
+        decides what actually happened. Stop is retried until the camera is
+        really idle: an unstopped camera records until the card fills and
+        leaves a clip that cannot be played.
         """
         seconds = max(0.2, min(float(seconds), 15.0))
         try:
@@ -237,31 +245,53 @@ class Worker:
                     self.last_error = f"live view stop: {exc}"
 
             t0 = time.monotonic()
-            self.client.start_recording()
-            # Confirm the camera is actually encoding. A HERO9 sitting in a
-            # menu, or in photo mode, answers the shutter command and records
-            # nothing. Two reads, in case status lags the first. Only an
-            # explicit False fails; an unknown shape (None) is trusted.
-            time.sleep(min(0.7, seconds / 2))
-            rec = self.client.is_recording()
-            if rec is False:
+            start_err = ""
+            try:
+                self.client.start_recording()
+            except Exception as exc:                       # noqa: BLE001
+                start_err = str(exc)
+
+            # Is it encoding? Up to four reads over two seconds, in case
+            # status lags the shutter.
+            rec = None
+            for _ in range(4):
                 time.sleep(0.5)
                 rec = self.client.is_recording()
-            if rec is False:
+                if rec is True:
+                    break
+            if rec is False or (rec is None and start_err):
+                # Explicitly idle, or no answer AND the command failed: it did
+                # not start. Send a stop anyway in case status is wrong; a
+                # runaway recording is worse than a lost clip.
                 try:
                     self.client.stop_recording()
                 except Exception:                          # noqa: BLE001
                     pass
                 msg = ("camera did not start recording. Is it on its shooting "
                        "screen and in video mode?")
+                if start_err:
+                    msg += f" (shutter: {start_err})"
                 with self._lock:
                     self.last_error = f"trigger failed: {msg}"
                 return msg
+
             remaining = seconds - (time.monotonic() - t0)
             if remaining > 0:
                 time.sleep(remaining)
-            self.client.stop_recording()
-            return "recorded"
+
+            # Stop, and make sure it stopped.
+            for _ in range(3):
+                try:
+                    self.client.stop_recording()
+                except Exception:                          # noqa: BLE001
+                    pass
+                time.sleep(0.7)
+                if self.client.is_recording() is not True:
+                    return "recorded"
+            msg = "camera is still recording. Press its shutter button to stop it."
+            with self._lock:
+                self.last_error = f"trigger failed: {msg}"
+            return msg
         except Exception as exc:                           # noqa: BLE001
             with self._lock:
                 self.last_error = f"trigger failed: {exc}"

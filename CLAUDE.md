@@ -49,7 +49,7 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-16)
 
-App version 0.1.9, versionCode 10.
+App version 0.1.10, versionCode 11.
 
 The APK built on this PC is signed with the Android debug key, not the
 permanent one. `android/keystore/flightpath.jks` and `signing.properties` are
@@ -107,6 +107,17 @@ keep_alive fallback that used to be a sleep command is now a status GET, and
 the worker GETs the control port every tick while a preview is on, which the
 legacy stream needs to stay up. Source: GoPro's own issue tracker and the
 community HERO9 API docs; the Open GoPro spec site could not be read.
+
+0.1.10 stops trusting the shutter's HTTP response. With port 80 right, the
+legacy shutter did reach the camera and it recorded, but the legacy server
+does not answer while recording, so the 8 s timeout read as failure, no
+stop was ever sent, and the camera was left recording twice, producing two
+clips it cannot play. trigger() now sends the shutter with a 2 s timeout,
+sets any exception aside, and asks the camera's state (served by the Open
+GoPro server on 8080, which does answer) whether it is encoding. Stop is
+sent with the same short timeout and retried up to three times until the
+camera is idle; if it never is, the message says to press the camera's
+button. _call() errors now name every URL tried, with its port.
 
 Proven:
 - CV pipeline on synthetic clips: 0.1 mph error at 240 and 480 fps, all clubs.
@@ -224,9 +235,12 @@ A different key means every user must uninstall.
   The media list and downloads (`/gp/gpMediaList`, `/videos/DCIM/...`) stay on
   8080. A gpControl command sent to 8080 hangs until timeout, it does not 404.
 - This HERO9 (Open GoPro firmware, 1.70 or later) answers Open GoPro state and
-  media but 404s the Open GoPro shutter. The shutter works through legacy
-  gpControl on port 80. Never assume the family that answers `state` answers
-  the rest; `_call()` resolves each endpoint on first use.
+  media but 404s the Open GoPro shutter. GoPro's openapi.json lists the HTTP
+  shutter for HERO10 and later only. The shutter works through legacy
+  gpControl on port 80, and that server records on command but does not
+  answer while recording. A shutter timeout is therefore not a failure; the
+  camera's state decides. Never assume the family that answers `state`
+  answers the rest; `_call()` resolves each endpoint on first use.
 - Legacy preview stream: `GET /gp/gpControl/execute?p1=gpStream&c1=restart`
   on port 80, MPEG-TS over UDP to port 8554 of the requester. It stops
   without periodic HTTP traffic on the control port.
