@@ -135,9 +135,10 @@ class ProbeResult:
 
 class GoProClient:
     def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                 timeout: float = 8.0):
+                 timeout: float = 8.0, control_port: int = 80):
         self.host = host
         self.port = port
+        self.control_port = control_port   # legacy gpControl server; 80 on a real camera
         self.timeout = timeout
         self._resolved: dict[str, str] = {}
 
@@ -149,7 +150,7 @@ class GoProClient:
         # 8080. Legacy control (/gp/gpControl/...) is on port 80 and nothing
         # else. Sending a gpControl command to 8080 does not 404, it hangs
         # until the timeout, which is what "shutter start timed out" was.
-        port = 80 if path.startswith("/gp/gpControl") else self.port
+        port = self.control_port if path.startswith("/gp/gpControl") else self.port
         return f"http://{self.host}:{port}{path}"
 
     def _get(self, path: str, timeout: float | None = None) -> bytes:
@@ -410,6 +411,35 @@ class GoProClient:
                 except (TypeError, ValueError):
                     continue
         return out
+
+    def clip_size(self, item: MediaItem) -> int | None:
+        """The clip's size as the download server reports it, or None.
+
+        The media list lags the file system for seconds after a recording:
+        measured on the HERO9, a fresh clip was listed at 0 bytes one second
+        after idle and at a few KB, stable across two reads, twenty seconds
+        later. The download server serves the file itself, so a one byte
+        ranged GET returns its true size in Content-Range without pulling
+        the clip. Content-Length is used if the server ignores Range.
+        """
+        name = os.path.basename(item.name)
+        if not SAFE_NAME.fullmatch(name) or name in (".", ".."):
+            raise GoProError(f"refusing suspicious media name: {item.name!r}")
+        url = self._url(f"/videos/DCIM/{item.folder}/{name}")
+        req = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                cr = r.headers.get("Content-Range", "")      # bytes 0-0/12345678
+                if "/" in cr:
+                    total = cr.rsplit("/", 1)[1].strip()
+                    if total.isdigit():
+                        return int(total)
+                cl = r.headers.get("Content-Length", "")
+                if r.status == 200 and cl.isdigit():
+                    return int(cl)                           # Range ignored; body left unread
+        except Exception:                                    # noqa: BLE001
+            return None
+        return None
 
     def download(self, item: MediaItem, dest_dir: str,
                  progress=None) -> str:

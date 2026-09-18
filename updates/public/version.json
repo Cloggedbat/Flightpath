@@ -1,5 +1,5 @@
 {
-  "versionCode": 19,
-  "versionName": "0.1.18",
-  "notes": "The camera test now ends with a plain verdict line (shutter ok with the clip size, stream ok) and marks the 404, timed out and refused lines as this camera's normal behaviour while it records. Nothing else changed. Next: Calibrate, capture the reference frame."
+  "versionCode": 20,
+  "versionName": "0.1.19",
+  "notes": "The whole capture chain now runs on the PC against a stand-in camera that misbehaves exactly like this HERO9, and it passes: settings, calibration capture to a reference frame, a shot to a speed, the camera test. That found and fixed one more thing your last log showed: the camera lists a fresh clip at a few KB for many seconds, so the app now asks the download server for the file's true size before fetching it. Also: the screen stays on while the app is open. Next: Calibrate, capture the reference frame, then Record a shot."
 }

@@ -49,7 +49,35 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.18, versionCode 19.
+App version 0.1.19, versionCode 20.
+
+0.1.19 is the step from reactive to proven. engine/tests/fake_hero9.py is
+a HERO9 that misbehaves exactly like this one: 404 on the Open GoPro
+shutter, a legacy shutter that times out and records anyway, connections
+dropped while recording, 500s while finalising, a media list that says 0
+and then a few KB for seconds after the file is whole, 409 on a second
+stream start, Linear refused at 240 fps, UDP TS with or without a 12 byte
+header. engine/tests/test_capture_flow.py runs the real Worker against
+it, poll loop and all: connect and baseline, Apply camera settings, a
+calibration capture through to a 1920x1080 reference frame, a shot
+through to 123.5 mph on the session (the profile's 4.2 ms readout applied
+to a synthetic clip that has none; 119.9 without), and the wizard's camera
+test through to its verdict, with a watcher asserting the connection
+never drops. 30 checks, about 90 s. It found two bugs before the phone
+did: the poll loop's shot path took the media list's size at face value
+and would have downloaded a stub, and the camera test's log went nowhere
+when run without begin_diagnostic(). From the 22:17 phone log (0.1.18):
+"new clip: GX010550.MP4 (0.0 MB, size settled after 2 s)", so the list
+reports a fresh clip at a few KB, stable, twenty seconds after idle. Both
+paths now ask the download server for the file's size (a one byte ranged
+GET, Content-Range; GoProClient.clip_size), the list is the fallback, and
+anything under MIN_CLIP_BYTES (256 KB) is not a clip yet. The camera test
+traces both sizes each second. Same log: a heartbeat sent just before
+Test camera came back 500 nine seconds later and was counted as a strike;
+a failed poll now re-checks busy before counting. Also: the screen stays
+on while the app is open (FLAG_KEEP_SCREEN_ON), since the worker dies
+with the screen. GoProClient takes control_port so the fake can run on
+any port; a real camera is still 80.
 
 0.1.18: the camera test ends with a verdict line ("verdict: shutter ok,
 26.3 MB clip; stream ok, 500 datagrams, MPEG-TS found") and labels the
@@ -282,9 +310,10 @@ Proven:
   status but 404s on both media list paths.
 
 NOT proven (in order of importance):
-1. That calibration capture works end to end on the real camera. 0.1.12
-   recorded and downloaded a real clip and failed only at decode, which
-   0.1.13 fixed, so the next capture should produce a reference frame.
+1. That calibration capture works end to end on the real camera. It does
+   against tests/fake_hero9.py (0.1.19), and 0.1.12 recorded and
+   downloaded a real clip, failing only at decode, which 0.1.13 fixed. It
+   has still not been run on the phone since.
 2. Live view. The stream format is now understood (Camera facts) and
    TsUdpDataSource.kt strips the header; the phone has not yet shown a
    frame of it.
@@ -324,6 +353,15 @@ python analyze.py shot t.mp4 --camera hero9-1080p240 --readout-ms 0 --ref 120,98
 
 Run the synthetic clip test after any change to `detect.py`, `physics.py` or
 `calibrate.py`. Match the generated `--fps` to the profile or you read half.
+
+```
+.venv/Scripts/python.exe tests/test_capture_flow.py   # the whole capture chain against a fake HERO9
+```
+
+Run that after any change to `worker.py`, `gopro.py` or `server.py`. It is
+the real Worker against `tests/fake_hero9.py`, which reproduces every
+measured quirk of this camera, and it must pass before any APK is built.
+Add every new camera behaviour learned on the phone to the fake first.
 
 The PC venv runs opencv-python 5.0.0 and numpy 2.2.6 because requirements.txt
 floats at >=4.8. The APK is pinned to 4.5.1.48 / numpy 1.26.2. So a green PC
@@ -396,10 +434,13 @@ A different key means every user must uninstall.
   through and TsExtractor never synced, which is why live view was black.
   TsUdpDataSource.kt finds the first 0x47 that repeats 188 bytes later
   and serves from there; the camera test reports the offset it found.
-- After the camera reports idle, the media list names the new clip with
-  size 0 for a while; it is still writing the file. Never download a clip
-  until its size is non-zero and stable across two reads
-  (_wait_for_new_clip). Measured: 0 MB one second after idle.
+- After the camera reports idle, the media list lags the file: it names
+  the new clip at size 0, then at a few KB, stable across reads, twenty
+  seconds after idle, for a clip that is tens of MB. Never trust the
+  list's size for a fresh clip. Ask the download server (a one byte ranged
+  GET; GoProClient.clip_size reads Content-Range), require MIN_CLIP_BYTES,
+  and require the same size on two reads a second apart
+  (_wait_for_new_clip, and the poll loop's _pending_size).
 - While the camera records, and for about 20 s after, every HTTP call
   fails (Errno 111 refused) or blocks to its timeout. The worker's poll loop stands down for
   the whole of a trigger, a camera test or a calibration capture. Before

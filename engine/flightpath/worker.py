@@ -30,6 +30,11 @@ import cv2
 from . import calibrate, cameras, detect, gopro, lens, nativecap
 from .session import Session, Shot
 
+# Below this a "clip" is a file header the camera has not filled yet. A single
+# second of 1080p240 HEVC is several MB; the HERO9 has listed a fresh clip at
+# a few KB, stable across reads, while still writing it.
+MIN_CLIP_BYTES = 256 * 1024
+
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
 
 
@@ -131,6 +136,7 @@ class Worker:
         self.camera_configured = False
         self.preview_on = False
         self._misses = 0                 # consecutive failed polls
+        self._pending_size: dict[str, int] = {}   # new clips whose size has not settled
         self._baselined = False          # seen holds everything already on the card
         self._calib_started = 0.0        # monotonic() when a calibration capture began
         self.diag_log: list[str] = []    # camera test output, one line per step, newest last
@@ -253,16 +259,20 @@ class Worker:
                 pass                                       # state still recovering
         return False, err
 
-    def _wait_for_new_clip(self, before: set[str], timeout_s: float = 25.0):
+    def _wait_for_new_clip(self, before: set[str], timeout_s: float = 25.0,
+                           trace=None):
         """The newest main video not in `before`, once its size has settled.
-        Returns the MediaItem, or None if nothing settled in time.
+        Returns the MediaItem with its size corrected, or None.
 
         Measured 2026-09-17: one second after the camera reports idle the
-        media list already names the new clip but gives its size as 0. The
-        camera is still writing the file, and downloading then fetches a
-        stub that fails at decode. So wait until the size is non-zero and
+        media list names the new clip at 0 bytes; twenty seconds later it
+        said a few KB, stable across two reads, for a clip that is tens of
+        MB. The list lags the file system. So the size that counts is the
+        one the download server reports for the file itself (clip_size), the
+        list being the fallback, and it must clear MIN_CLIP_BYTES and be
         identical on two consecutive reads a second apart. A media list that
         errors is the camera still recovering, not a reason to give up.
+        `trace`, if given, gets one line per observation.
         """
         deadline = time.monotonic() + timeout_s
         last: tuple[str, int] | None = None
@@ -276,9 +286,16 @@ class Worker:
             if not fresh:
                 continue
             item = sorted(fresh, key=lambda i: i.mtime)[-1]
-            if item.size > 0 and last == (item.path, item.size):
+            listed = item.size
+            served = self.client.clip_size(item)
+            size = served if served is not None else listed
+            if trace:
+                trace(f"  {item.name}: media list says {listed} B, download server says "
+                      + (f"{served} B" if served is not None else "nothing"))
+            if size >= MIN_CLIP_BYTES and last == (item.path, size):
+                item.size = size
                 return item
-            last = (item.path, item.size)
+            last = (item.path, size)
         return None
 
     def trigger(self, seconds: float = 3.0) -> str:
@@ -622,7 +639,7 @@ class Worker:
                     # settled size says how long the camera really recorded;
                     # 1080p240 HEVC is roughly 8 to 10 MB per second.
                     t1 = time.monotonic()
-                    clip = self._wait_for_new_clip(before, timeout_s=25.0)
+                    clip = self._wait_for_new_clip(before, timeout_s=25.0, trace=self._note)
                     if clip is not None:
                         # A still camera, not a shot. Mark it seen or the
                         # poll loop analyses it as one.
@@ -815,6 +832,13 @@ class Worker:
             self.client.state()
             self._misses = 0
         except Exception as exc:                           # noqa: BLE001
+            if self._camera_busy():
+                # A capture or test started while this poll was in flight
+                # (seen on the phone: a poll sent just before Test camera
+                # came back 500 nine seconds later, from a camera that was by
+                # then recording on purpose). Not a strike.
+                self._misses = 0
+                return
             # One failed poll is not a lost camera. The HERO9 answers slowly or
             # with an error while it is busy (just after a recording, or when
             # the GoPro Quik app is also talking to it). Three in a row is.
@@ -884,6 +908,24 @@ class Worker:
             return
         fresh = [i for i in items if i.is_main_video and i.path not in self.seen]
         fresh.sort(key=lambda i: i.mtime)
+        # A clip shows up in the list at size 0 while the camera is still
+        # writing it (measured: 0 MB one second after idle). Take it only
+        # once its size is non-zero and unchanged since the previous tick,
+        # the polling twin of _wait_for_new_clip. It is not in seen yet, so
+        # it comes round again next tick.
+        settled = []
+        for i in fresh:
+            # Ask the download server, not the list: the list lags the file
+            # by seconds and can say a few KB for a clip that is tens of MB.
+            served = self.client.clip_size(i)
+            size = served if served is not None else i.size
+            if size >= MIN_CLIP_BYTES and self._pending_size.get(i.path) == size:
+                i.size = size
+                settled.append(i)
+                self._pending_size.pop(i.path, None)
+            else:
+                self._pending_size[i.path] = size
+        fresh = settled
 
         if self.settings.mode == "focus":
             fresh = fresh[:1]
