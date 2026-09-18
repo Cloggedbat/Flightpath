@@ -1,5 +1,5 @@
 {
-  "versionCode": 18,
-  "versionName": "0.1.17",
-  "notes": "The camera lists a new clip at 0 MB for a moment while it is still writing the file. The app now waits until the clip's size has settled before downloading it, so the calibration capture no longer risks fetching a stub. The camera test shows the settled size and how long that took. Update, then go to Calibrate and capture the reference frame."
+  "versionCode": 19,
+  "versionName": "0.1.18",
+  "notes": "The camera test now ends with a plain verdict line (shutter ok with the clip size, stream ok) and marks the 404, timed out and refused lines as this camera's normal behaviour while it records. Nothing else changed. Next: Calibrate, capture the reference frame."
 }

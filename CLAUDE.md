@@ -49,7 +49,19 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.17, versionCode 18.
+App version 0.1.18, versionCode 19.
+
+0.1.18: the camera test ends with a verdict line ("verdict: shutter ok,
+26.3 MB clip; stream ok, 500 datagrams, MPEG-TS found") and labels the
+shutter's 404, timeout and refused lines as this camera's normal
+behaviour. AJ read two passing tests as failures because the log prints
+the camera's raw errors, and on this HERO9 a working shutter produces
+several. Nothing else changed. On the question of the GoPro Quik app
+interfering: unlikely. The probe is clean before every shutter, the
+errors sit exactly inside the record-and-close window, and "Connection
+refused" means the camera's server is down, not busy with another
+client. Cheap to rule out anyway: force-stop Quik and disable its
+auto-connect.
 
 0.1.17: the 0.1.16 camera test log (21:43, 2026-09-17) confirms the stop
 loop ("idle confirmed after 20 s") and shows the next link in the chain:

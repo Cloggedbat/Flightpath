@@ -575,9 +575,13 @@ class Worker:
             except Exception as exc:                       # noqa: BLE001
                 self._note(f"probe failed: {type(exc).__name__}: {exc}")
 
+            verdict_shutter = "not run"
+            verdict_stream = "not run"
+
             # 2. Shutter, watched through the camera's state, not its reply.
             if not self.begin_trigger():
                 self._note("shutter: busy (a shot or capture is in progress), skipped")
+                verdict_shutter = "skipped, camera busy"
             else:
                 try:
                     try:
@@ -593,7 +597,8 @@ class Worker:
                         self.client.start_recording()
                         self._note("shutter start: answered")
                     except Exception as exc:               # noqa: BLE001
-                        self._note(f"shutter start: {exc}")
+                        self._note("shutter start: no usable reply, which is normal on this "
+                                   f"HERO9 (it records anyway; the clip line is the proof): {exc}")
                     # Record a fixed 3 s of wall time, then stop. State is
                     # unreadable while the camera records, so it is not polled
                     # during the window: each read blocks to its timeout, and
@@ -606,7 +611,8 @@ class Worker:
                     t0 = time.monotonic()
                     confirmed, stop_err = self._stop_and_confirm()
                     if stop_err:
-                        self._note(f"shutter stop: {stop_err}")
+                        self._note("shutter stop: camera refused or ignored the command while "
+                                   f"closing the file, which is normal: {stop_err}")
                     self._note(f"after stop: {'idle confirmed' if confirmed else 'NOT confirmed'}"
                                f" after {time.monotonic() - t0:.0f} s"
                                + ("" if confirmed else
@@ -624,8 +630,10 @@ class Worker:
                         self._note(f"new clip: {clip.path} ({clip.size / 1048576:.1f} MB, "
                                    f"size settled after {time.monotonic() - t1:.0f} s)"
                                    "  (not analysed as a shot)")
+                        verdict_shutter = f"ok, {clip.size / 1048576:.1f} MB clip"
                     else:
                         self._note("new clip: none with a settled size within 25 s")
+                        verdict_shutter = "NO CLIP (camera on a menu screen? press Mode)"
                 finally:
                     with self._lock:
                         self.recording = False
@@ -644,12 +652,25 @@ class Worker:
                 n, nbytes, note = self._udp_listen(gopro.PREVIEW_UDP_PORT, 5)
                 if n is None:
                     self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {note}")
+                    verdict_stream = "port 8554 could not be opened"
                 elif n == 0:
                     self._note(f"udp {gopro.PREVIEW_UDP_PORT}: nothing arrived in 5 s. "
                                "Camera on a menu screen? Not emitting the Open GoPro stream?")
+                    verdict_stream = "NOTHING ARRIVED"
                 else:
                     self._note(f"udp {gopro.PREVIEW_UDP_PORT}: {n} datagrams, {nbytes} bytes; {note}")
+                    verdict_stream = (f"ok, {n} datagrams"
+                                      + (", MPEG-TS found" if "MPEG-TS at byte" in note
+                                         else ", no MPEG-TS pattern"))
                 self.stop_preview()
+            else:
+                verdict_stream = f"start failed: {r.get('error')}"
+            # The lines above print the camera's raw errors, and on this
+            # HERO9 a working shutter produces several. Say plainly how it
+            # went, so a passing test does not read as a failing one.
+            self._note(f"verdict: shutter {verdict_shutter}; stream {verdict_stream}. "
+                       "Lines above saying 404, timed out or refused during the "
+                       "recording are this camera's normal behaviour.")
             self._note("camera test finished")
         except Exception as exc:                           # noqa: BLE001
             self._note(f"camera test crashed: {type(exc).__name__}: {exc}")
