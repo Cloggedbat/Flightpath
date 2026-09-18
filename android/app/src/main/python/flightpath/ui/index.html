@@ -676,8 +676,10 @@
       $("w1test").disabled = true;
       return;
     }
-    $("w1apply").disabled = false;
-    $("w1test").disabled = false;
+    // A capture or camera test owns the camera for a while and every read
+    // fails meanwhile; do not offer buttons that can only report that.
+    $("w1apply").disabled = !!s.busy;
+    $("w1test").disabled = !!s.busy;
     mark("w1res",  cs.resolution == null ? "?" : String(cs.resolution), cs.resolution === "1080p");
     mark("w1fps",  cs.fps == null ? "?" : cs.fps + " fps", cs.fps === 240);
     var lensOk = cs.lens === "Linear" || cs.lens === "Linear + Horizon";

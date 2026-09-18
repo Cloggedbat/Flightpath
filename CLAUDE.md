@@ -49,7 +49,26 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.14, versionCode 15.
+App version 0.1.15, versionCode 16.
+
+0.1.15 fixes the flapping, from one camera test log (18:31, 2026-09-17).
+The tick's heartbeat kept polling state() every 3 s while a capture or a
+camera test had the camera recording, and the camera's HTTP stack is
+unresponsive then by design, so every capture racked up three strikes,
+dropped the connection, and reconnected. The tick now stands down entirely
+while a trigger, a camera test or a calibration capture is in flight: no
+heartbeat, no strikes, no media list. Proven by a harness with a fake
+client (20 checks). Same log, second bug: the camera test timed its 3 s
+record window by six state() reads, each of which blocked for its 8 s
+timeout, so the test recorded for 32 s (GX010543). It now sleeps a
+wall-clock 3 s and reuses trigger()'s stop loop, and its clip is marked
+seen so the poll loop does not analyse it as a shot. Same log, third:
+the preview datagrams are 1328 bytes, which is a 12 byte header plus seven
+188 byte TS packets, so TsExtractor never synced. TsUdpDataSource.kt
+replaces UdpDataSource and serves only the TS bytes of each datagram; the
+camera test now reports the offset it finds. Also: Apply camera settings
+and Test camera are disabled while the camera is busy, and Apply refuses
+with a reason instead of "could not read back" four times over.
 
 0.1.14: on 2026-09-17 at 17:19 the S22 Ultra's Engine row read "ok (H.264 +
 HEVC, MediaCodec)". ClipDecoder.kt decodes both codecs on the phone and
@@ -223,8 +242,9 @@ NOT proven (in order of importance):
 1. That calibration capture works end to end on the real camera. 0.1.12
    recorded and downloaded a real clip and failed only at decode, which
    0.1.13 fixed, so the next capture should produce a reference frame.
-2. Live view (GoPro UDP MPEG-TS preview via Media3). The camera sends a
-   clean MPEG-TS stream; the phone has never shown a frame of it.
+2. Live view. The stream format is now understood (Camera facts) and
+   TsUdpDataSource.kt strips the header; the phone has not yet shown a
+   frame of it.
 3. Any real golf ball. Every number ever produced is from a synthetic clip.
 4. Rolling-shutter readout time of the HERO9 (drop test measures it).
 
@@ -326,11 +346,20 @@ A different key means every user must uninstall.
   shutter's reply, and confirms by clip, sending stop until state recovers to
   a clean idle. Never assume the family that answers `state` answers the rest;
   `_call()` resolves each endpoint on first use.
-- Preview stream: on a real test the camera emitted 500 UDP datagrams to the
-  phone, so the camera side works. The first bytes were not 0x47, so the
-  payload may not be the plain MPEG-TS that `LiveView.kt`'s `TsExtractor`
-  expects. The camera test now reports the 0x47 fraction; live view being
-  black is an Android decode problem, not a camera one.
+- Preview stream format, measured 2026-09-17: 500 datagrams of exactly
+  1328 bytes, first bytes 84 10 00 01 00 00 00 00. 1328 is a 12 byte
+  header plus seven 188 byte MPEG-TS packets, so the stream is TS wrapped
+  in a small per-datagram header. Media3's UdpDataSource passed the header
+  through and TsExtractor never synced, which is why live view was black.
+  TsUdpDataSource.kt finds the first 0x47 that repeats 188 bytes later
+  and serves from there; the camera test reports the offset it found.
+- While the camera records, and for a few seconds after, every HTTP call
+  fails or blocks to its timeout. The worker's poll loop stands down for
+  the whole of a trigger, a camera test or a calibration capture. Before
+  0.1.15 it counted three strikes and dropped the connection around every
+  capture; that was the flapping. Never time a record window by polling
+  state: each read blocks to its timeout, and six of them once turned a
+  3 s test clip into 32 s.
 - Legacy preview stream: `GET /gp/gpControl/execute?p1=gpStream&c1=restart`
   on port 80, MPEG-TS over UDP to port 8554 of the requester. It stops
   without periodic HTTP traffic on the control port.

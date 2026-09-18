@@ -166,6 +166,7 @@ class Worker:
                 "camera_ok": self.camera_ok,
                 "camera_note": self.camera_note,
                 "recording": self.recording,
+                "busy": self._busy_unlocked(),
                 "mode": self.settings.mode,
                 "club": self.settings.club,
                 "calibrated": self.settings.ref_px is not None,
@@ -435,6 +436,25 @@ class Worker:
         return True
 
     @staticmethod
+    def _ts_offset(data: bytes) -> int | None:
+        """Byte offset of the first MPEG-TS packet in a datagram, or None.
+
+        A TS packet is 188 bytes starting with 0x47. The HERO9 wraps seven of
+        them in a 12 byte header per datagram (1328 bytes, measured), so the
+        sync byte sits at 12, 200, 388. Search the first 64 bytes for a 0x47
+        that repeats 188 later, and again 376 later when the datagram is long
+        enough to check.
+        """
+        n = len(data)
+        for o in range(0, min(64, n - 188)):
+            if data[o] != 0x47 or data[o + 188] != 0x47:
+                continue
+            if o + 376 < n and data[o + 376] != 0x47:
+                continue
+            return o
+        return None
+
+    @staticmethod
     def _udp_listen(port: int, seconds: int) -> tuple[int | None, int | None, str]:
         """Bind UDP `port` the way Media3 does (0.0.0.0, in this network-bound
         process) and count what arrives. Slots of one second, so the fake clock
@@ -452,6 +472,8 @@ class Worker:
             return None, None, f"could not bind port {port}: {exc}"
         n = total = ts_sync = 0
         first = b""
+        offset: int | None = None
+        per = 0
         idle = 0
         try:
             while idle < max(1, int(seconds)) and n < 500:
@@ -466,15 +488,22 @@ class Worker:
                 total += len(data)
                 if not first:
                     first = data[:8]
-                # MPEG-TS packets are 188 bytes starting with 0x47. Media3's
-                # TsExtractor needs that; report whether the stream provides it.
-                if data[:1] == b"\x47" or data[188:189] == b"\x47":
+                    offset = Worker._ts_offset(data)
+                    per = (len(data) - offset) // 188 if offset is not None else 0
+                # MPEG-TS packets are 188 bytes starting with 0x47. The HERO9
+                # wraps seven of them in a 12 byte header per datagram, so
+                # check at the offset the first datagram showed, not at byte 0.
+                o = offset or 0
+                if data[o:o + 1] == b"\x47" and data[o + 188:o + 189] == b"\x47":
                     ts_sync += 1
         finally:
             s.close()
         note = f"first bytes {first.hex(' ')}"
-        if n:
-            note += f"; {ts_sync}/{n} look like MPEG-TS (0x47 sync)"
+        if n and offset is None:
+            note += f"; no 188 byte 0x47 pattern in the first datagram, {ts_sync}/{n} sync at byte 0"
+        elif n:
+            note += (f"; MPEG-TS at byte {offset}, {per} packets per datagram, "
+                     f"{ts_sync}/{n} datagrams sync there")
         return n, total, note
 
     def camera_diagnostic(self) -> None:
@@ -512,31 +541,44 @@ class Worker:
                         self._note("shutter start: answered")
                     except Exception as exc:               # noqa: BLE001
                         self._note(f"shutter start: {exc}")
-                    rec = None
-                    for i in range(6):
-                        time.sleep(0.5)
-                        rec = self.client.is_recording()
-                        self._note(f"  {0.5 * (i + 1):.1f}s encoding = {rec}")
-                        if rec is True:
-                            break
-                    try:
-                        self.client.stop_recording()
-                        self._note("shutter stop: answered")
-                    except Exception as exc:               # noqa: BLE001
-                        self._note(f"shutter stop: {exc}")
+                    # Record a fixed 3 s of wall time, then stop. State is
+                    # unreadable while the camera records, so it is not polled
+                    # during the window: each read blocks to its timeout, and
+                    # six of them once turned this 3 s test into a 32 s clip.
+                    time.sleep(3.0)
+                    self._note("  recorded 3.0 s (state is unreadable while recording, not polled)")
+                    # Stop, and keep sending stop until state reports a clean
+                    # idle, exactly as trigger() does. None means state is
+                    # still recovering; only a real False proves it stopped.
                     idle = None
-                    for _ in range(10):
-                        time.sleep(0.5)
-                        idle = self.client.is_recording()
-                        if idle is not True:
+                    stop_err = ""
+                    for _ in range(6):
+                        try:
+                            self.client.stop_recording()
+                            stop_err = ""
+                        except Exception as exc:           # noqa: BLE001
+                            stop_err = str(exc)
+                        time.sleep(0.7)
+                        try:
+                            idle = self.client.is_recording()
+                        except Exception:                  # noqa: BLE001
+                            idle = None
+                        if idle is False:
                             break
+                    if stop_err:
+                        self._note(f"shutter stop: {stop_err}")
                     self._note(f"after stop: encoding = {idle}"
-                               + ("  STILL RECORDING, press the camera's button" if idle is True else ""))
+                               + ("  STILL RECORDING, press the camera's button" if idle is True else "")
+                               + ("  (state not back yet)" if idle is None else ""))
                     time.sleep(1.0)
                     try:
                         after = {i.path for i in self.client.media_list()}
                         new = sorted(after - before)
-                        self._note("new clip: " + (", ".join(new) if new else "none"))
+                        # The test's clip is a still camera, not a shot. Mark
+                        # it seen or the poll loop analyses it as one.
+                        self.seen.update(new)
+                        self._note("new clip: " + (", ".join(new) if new else "none")
+                                   + ("  (not analysed as a shot)" if new else ""))
                     except Exception as exc:               # noqa: BLE001
                         self._note(f"media list after: {type(exc).__name__}: {exc}")
                 finally:
@@ -571,6 +613,15 @@ class Worker:
 
     def configure_camera(self) -> dict:
         """Put the camera into 1080p240 Linear so the user does not have to."""
+        if self._camera_busy():
+            # Every read-back fails while the camera recovers from a shutter,
+            # and "could not read back" four times over is not an answer.
+            result = {"ok": False, "settings": {}, "problems": [
+                "the camera is still busy with a recording or a test. "
+                "Wait a few seconds and tap Apply again."]}
+            with self._lock:
+                self.camera_configured = False
+            return result
         try:
             result = self.client.configure_for_launch_monitor(
                 fps=int(cameras.get(self.settings.camera_profile).fps)
@@ -663,9 +714,31 @@ class Worker:
             except Exception:                              # noqa: BLE001
                 pass
 
+    def _busy_unlocked(self) -> bool:
+        """True while something this worker started has the camera tied up:
+        a shot trigger, a camera test, or a calibration capture. Its HTTP
+        stack is unresponsive while it records, by design, so during these a
+        failed poll says nothing about whether the camera is still there."""
+        calibrating = (self.calib_stage in ("recording", "fetching")
+                       and time.monotonic() - self._calib_started < 60.0)
+        return bool(self.recording or self._diag_running or calibrating)
+
+    def _camera_busy(self) -> bool:
+        with self._lock:
+            return self._busy_unlocked()
+
     def _tick(self) -> None:
         if not self.camera_ok:
             self._connect()
+            return
+
+        if self._camera_busy():
+            # Polling now would only count strikes against a camera that is
+            # doing exactly what it was told, and the connection would drop
+            # and reconnect around every capture. Do not touch the miss
+            # counter, do not list media (the capture owns whatever clip
+            # appears), come back next tick.
+            self._misses = 0
             return
 
         # Heartbeat first, on the cheap status endpoint. This alone decides

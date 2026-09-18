@@ -1,5 +1,5 @@
 {
-  "versionCode": 15,
-  "versionName": "0.1.14",
-  "notes": "Two fixes from the first 0.1.13 session on the phone. Backing out of the app and reopening it no longer gives a blank screen with Address already in use: the engine now releases port 8080 when the app closes. Live view no longer fails with HTTP 409 when the camera thinks a stream is still running; the app stops it and tries once more. Next step: on the Camera step tap Apply camera settings and check the panel reads 1080p, 240 fps, Linear, HyperSmooth Off."
+  "versionCode": 16,
+  "versionName": "0.1.15",
+  "notes": "Fixes the connection flapping: the app no longer counts a camera that is busy recording as a lost camera, so it stays connected through every capture and camera test. The camera test now records for a real 3 seconds instead of 32, and its clip is not analysed as a shot. Live view: the camera's stream turned out to be MPEG-TS wrapped in a 12 byte header; the app now strips it. Apply camera settings and Test camera are disabled while the camera is busy, and Apply says so instead of failing four times."
 }

@@ -9,7 +9,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.UdpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -52,7 +51,9 @@ class LiveView(private val activity: Activity, private val onEvent: (String, Str
             .setBufferDurationsMs(250, 2_000, 150, 250)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-        val udp = DataSource.Factory { UdpDataSource(SOCKET_TIMEOUT_MS, 65_536) }
+        // Not UdpDataSource: the HERO9 puts a 12 byte header in front of the
+        // TS packets in every datagram, and TsExtractor never syncs past it.
+        val udp = DataSource.Factory { TsUdpDataSource(SOCKET_TIMEOUT_MS) }
         val extractors = DefaultExtractorsFactory()
             .setTsExtractorMode(TsExtractor.MODE_SINGLE_PMT)
             .setTsExtractorFlags(
