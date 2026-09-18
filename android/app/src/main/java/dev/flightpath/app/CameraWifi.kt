@@ -70,9 +70,10 @@ class CameraWifi(private val context: Context) {
             override fun onUnavailable() {
                 Log.w(TAG, "camera network unavailable")
                 listener.onUnavailable(
-                    "Could not join the camera's WiFi. Is the phone's WiFi switched on, " +
-                    "and the camera's (Preferences > Connections > Wireless Connections)? " +
-                    "If the camera is not named GP..., type its exact name from Camera Info."
+                    "Could not join the camera's WiFi. Is the phone's WiFi switched on, and " +
+                    "did Quik wake the camera's WiFi first (a HERO9 only broadcasts after an " +
+                    "app asks over Bluetooth)? If the camera is not named GP..., type its " +
+                    "exact name from Camera Info."
                 )
             }
 

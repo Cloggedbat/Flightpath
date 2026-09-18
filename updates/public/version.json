@@ -1,5 +1,5 @@
 {
-  "versionCode": 23,
-  "versionName": "0.1.22",
-  "notes": "If the phone's own WiFi is switched off, the scan now says so instead of blaming the camera; the app joins the camera over WiFi even though your data stays on 5G. If the camera is not named GP..., type its exact name from Preferences, Connections, Camera Info."
+  "versionCode": 24,
+  "versionName": "0.1.23",
+  "notes": "Corrects the last update's instructions. A HERO9 only switches its WiFi on when an app asks over Bluetooth, so for now: open Quik until it shows the camera connected, force-stop Quik, press Mode back to the shooting screen, then connect here. The app will send that Bluetooth request itself in a coming version so Quik is never needed again."
 }

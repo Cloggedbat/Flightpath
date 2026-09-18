@@ -117,9 +117,9 @@ class ProbeResult:
         if not self.reachable:
             return (
                 f"No answer from {self.host}.\n"
-                "  1. Turn the camera's WiFi on from its own menu "
-                "(Preferences > Connections > Wireless Connections > On), "
-                "then press Mode back to the shooting screen.\n"
+                "  1. Turn the camera's WiFi on. A HERO9 only broadcasts after an app "
+                "asks over Bluetooth: open the Quik app until it shows the camera "
+                "connected, force-stop Quik, then press Mode back to the shooting screen.\n"
                 "  2. Join that network from the phone.\n"
                 "  3. Android may refuse to use a network with no internet. "
                 "Accept the 'stay connected' prompt when it appears."

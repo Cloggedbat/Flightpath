@@ -344,12 +344,13 @@
 
       <div class="connectBox" id="w1help" hidden>
         <p><b>1. On the camera:</b> swipe down, Preferences, Connections,
-          <b>Wireless Connections: On</b>. It stays on from now on; no GoPro app is
-          needed, ever. The network name (GP&hellip;) and password are under
-          Preferences, Connections, <b>Camera Info</b>. <b>Then press Mode until the
-          camera shows its normal shooting screen.</b> The camera will not record or
-          preview while it is sitting in a menu, and the Connect Device screen counts
-          as a menu.</p>
+          <b>Wireless Connections: On</b>. Then open the GoPro Quik app and wait until
+          it shows the camera connected: a HERO9 only switches its WiFi on when an app
+          asks over Bluetooth, and that is Quik's one job here. <b>Force-stop Quik</b>,
+          then <b>press Mode until the camera shows its normal shooting screen</b>. The
+          network name (GP&hellip;) and password are under Preferences, Connections,
+          <b>Camera Info</b>. The camera will not record or preview while it is sitting
+          in a menu, and the Connect Device screen counts as a menu.</p>
         <p><b>2. On the phone:</b> tap below, pick the GP&hellip; network, enter the
           password. When Android says no internet, tap <b>keep connected</b>.</p>
         <div id="nativeConnect" hidden>
@@ -369,10 +370,10 @@
             <button class="prim" id="nConnect" style="flex:1">Connect to camera</button>
           </div>
           <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
-            stays on 5G for everything else. Before tapping: force-stop the GoPro Quik app (it
-            fights this app for the camera), have the camera's <b>Wireless Connections</b> on
-            and the camera on its shooting screen, and make sure the phone's <b>Location</b>
-            toggle is on (Android hides networks otherwise).</p>
+            stays on 5G for everything else. Before tapping: let Quik wake the camera's WiFi
+            (step 1), then force-stop Quik (it fights this app for the camera), have the
+            camera on its shooting screen, and make sure the phone's <b>WiFi</b> and
+            <b>Location</b> toggles are on (Android hides networks otherwise).</p>
           <div class="btnRow" style="margin-top:12px">
             <button class="sec" id="nUseCurrent" style="flex:1">Already joined in WiFi settings? Use that</button>
           </div>
@@ -857,7 +858,7 @@
       if (!anyGp) {
         var d = document.createElement("div");
         d.className = "none";
-        d.textContent = "No GoPro network in this list. The camera is not broadcasting: on the camera go to Preferences \u203a Connections \u203a Wireless Connections and turn it On, press Mode back to the shooting screen, then scan again.";
+        d.textContent = "No GoPro network in this list. The camera is not broadcasting. A HERO9 only switches its WiFi on when an app asks over Bluetooth: open the Quik app until it shows the camera connected, force-stop Quik, press Mode back to the shooting screen, then scan again.";
         box.appendChild(d);
       }
     }
