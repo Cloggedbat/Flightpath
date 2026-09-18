@@ -253,6 +253,34 @@ class Worker:
                 pass                                       # state still recovering
         return False, err
 
+    def _wait_for_new_clip(self, before: set[str], timeout_s: float = 25.0):
+        """The newest main video not in `before`, once its size has settled.
+        Returns the MediaItem, or None if nothing settled in time.
+
+        Measured 2026-09-17: one second after the camera reports idle the
+        media list already names the new clip but gives its size as 0. The
+        camera is still writing the file, and downloading then fetches a
+        stub that fails at decode. So wait until the size is non-zero and
+        identical on two consecutive reads a second apart. A media list that
+        errors is the camera still recovering, not a reason to give up.
+        """
+        deadline = time.monotonic() + timeout_s
+        last: tuple[str, int] | None = None
+        while time.monotonic() < deadline:
+            time.sleep(1.0)
+            try:
+                fresh = [i for i in self.client.media_list()
+                         if i.is_main_video and i.path not in before]
+            except Exception:                              # noqa: BLE001
+                continue
+            if not fresh:
+                continue
+            item = sorted(fresh, key=lambda i: i.mtime)[-1]
+            if item.size > 0 and last == (item.path, item.size):
+                return item
+            last = (item.path, item.size)
+        return None
+
     def trigger(self, seconds: float = 3.0) -> str:
         """Manual shutter. Call begin_trigger() first to claim it.
 
@@ -358,14 +386,7 @@ class Worker:
                 self._note("shutter stop not confirmed; looking for the clip anyway")
 
             stage("fetching")
-            item = None
-            for _ in range(15):
-                time.sleep(1.0)
-                fresh = [i for i in self.client.media_list()
-                         if i.is_main_video and i.path not in before]
-                if fresh:
-                    item = sorted(fresh, key=lambda i: i.mtime)[-1]
-                    break
+            item = self._wait_for_new_clip(before, timeout_s=25.0)
             if item is None:
                 if unconfirmed:
                     stage("failed", "no new clip appeared and the camera never "
@@ -590,22 +611,21 @@ class Worker:
                                f" after {time.monotonic() - t0:.0f} s"
                                + ("" if confirmed else
                                   "; if the red light is on, press the camera's button"))
-                    time.sleep(1.0)
-                    try:
-                        items = self.client.media_list()
-                        new = sorted(i.path for i in items if i.path not in before)
-                        size = {i.path: i.size for i in items}
-                        # The test's clip is a still camera, not a shot. Mark
-                        # it seen or the poll loop analyses it as one. Its size
-                        # says how long the camera really recorded: 1080p240
-                        # HEVC is roughly 8 to 10 MB per second.
-                        self.seen.update(new)
-                        self._note("new clip: "
-                                   + (", ".join(f"{p} ({size.get(p, 0) // 1048576} MB)" for p in new)
-                                      if new else "none")
-                                   + ("  (not analysed as a shot)" if new else ""))
-                    except Exception as exc:               # noqa: BLE001
-                        self._note(f"media list after: {type(exc).__name__}: {exc}")
+                    # Same wait the calibration capture uses: the clip shows
+                    # up at 0 MB while the camera is still writing it. Its
+                    # settled size says how long the camera really recorded;
+                    # 1080p240 HEVC is roughly 8 to 10 MB per second.
+                    t1 = time.monotonic()
+                    clip = self._wait_for_new_clip(before, timeout_s=25.0)
+                    if clip is not None:
+                        # A still camera, not a shot. Mark it seen or the
+                        # poll loop analyses it as one.
+                        self.seen.add(clip.path)
+                        self._note(f"new clip: {clip.path} ({clip.size / 1048576:.1f} MB, "
+                                   f"size settled after {time.monotonic() - t1:.0f} s)"
+                                   "  (not analysed as a shot)")
+                    else:
+                        self._note("new clip: none with a settled size within 25 s")
                 finally:
                     with self._lock:
                         self.recording = False

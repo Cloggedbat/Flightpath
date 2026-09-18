@@ -49,7 +49,18 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.16, versionCode 17.
+App version 0.1.17, versionCode 18.
+
+0.1.17: the 0.1.16 camera test log (21:43, 2026-09-17) confirms the stop
+loop ("idle confirmed after 20 s") and shows the next link in the chain:
+"new clip: GX010549.MP4 (0 MB)". One second after the camera reports idle
+the media list names the clip but gives its size as 0; the camera is still
+writing the file. The calibration capture took the first sighting and
+would have downloaded a stub. _wait_for_new_clip() now waits until the
+clip's size is non-zero and identical on two consecutive reads a second
+apart, up to 25 s, ignoring media list errors while the camera recovers;
+the capture and the camera test both use it, and the test reports the
+settled size and how long it took. Harness: 9 checks.
 
 0.1.16: the 0.1.15 camera test log (19:22, 2026-09-17) shows the flap
 gone (no "camera poll failed" lines) and the test at 29 s, and it shows the
@@ -373,8 +384,12 @@ A different key means every user must uninstall.
   through and TsExtractor never synced, which is why live view was black.
   TsUdpDataSource.kt finds the first 0x47 that repeats 188 bytes later
   and serves from there; the camera test reports the offset it found.
-- While the camera records, and for a few seconds after, every HTTP call
-  fails or blocks to its timeout. The worker's poll loop stands down for
+- After the camera reports idle, the media list names the new clip with
+  size 0 for a while; it is still writing the file. Never download a clip
+  until its size is non-zero and stable across two reads
+  (_wait_for_new_clip). Measured: 0 MB one second after idle.
+- While the camera records, and for about 20 s after, every HTTP call
+  fails (Errno 111 refused) or blocks to its timeout. The worker's poll loop stands down for
   the whole of a trigger, a camera test or a calibration capture. Before
   0.1.15 it counted three strikes and dropped the connection around every
   capture; that was the flapping. Never time a record window by polling

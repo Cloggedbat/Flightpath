@@ -1,5 +1,5 @@
 {
-  "versionCode": 17,
-  "versionName": "0.1.16",
-  "notes": "The camera can take up to 20 seconds to answer after it stops recording. The app now waits up to 30 seconds for that instead of 4, and the calibration capture goes looking for its clip either way, so a slow camera no longer turns a good recording into a failed capture. The camera test shows the size of the clip it made. Update, then go to Calibrate and capture the reference frame."
+  "versionCode": 18,
+  "versionName": "0.1.17",
+  "notes": "The camera lists a new clip at 0 MB for a moment while it is still writing the file. The app now waits until the clip's size has settled before downloading it, so the calibration capture no longer risks fetching a stub. The camera test shows the settled size and how long that took. Update, then go to Calibrate and capture the reference frame."
 }
