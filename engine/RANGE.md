@@ -110,8 +110,11 @@ python run.py --gopro-host 10.5.5.9   # PC joined to the camera's WiFi
 
 ## Every session, about 5 minutes
 
-1. **Camera on, WiFi on.** On the HERO9: Preferences, Connections, Connect
-   Device, GoPro App. Note the network name and password.
+1. **Camera on, WiFi on.** On the HERO9: Preferences, Connections, Wireless
+   Connections: On (once; it stays on). The network name and password are
+   under Preferences, Connections, Camera Info. Press Mode back to the
+   shooting screen. No GoPro app is involved, and Quik should be
+   force-stopped: two apps on one camera fight each other.
 2. **Join it from the phone.** Android will warn that the network has no
    internet. Accept and stay connected, or it will silently drop back to
    cellular and nothing will work.

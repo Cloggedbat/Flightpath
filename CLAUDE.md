@@ -49,7 +49,18 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.20, versionCode 21.
+App version 0.1.21, versionCode 22.
+
+0.1.21: copy only. Every instruction in the app, the probe's hint and
+RANGE.md told the user to turn the camera's WiFi on through Preferences,
+Connections, Connect Device, GoPro App. That is the pairing screen: it
+parks the camera on a "waiting for app" menu, and a camera in a menu
+records nothing, or (plausibly) the stubs of 0.1.20. The right switch is
+Preferences, Connections, Wireless Connections: On, once, which stays on
+and needs no GoPro app; the name and password are under Camera Info; then
+Mode back to the shooting screen. Also spelled out: Quik and FlightPath
+cannot share the camera (FlightPath holds the WiFi link, Quik pokes the
+camera over Bluetooth), so Quik is force-stopped before FlightPath.
 
 0.1.20: the first 0.1.19 camera test (06:41, 2026-09-18) changes the
 diagnosis. For 25 s after the shutter, the media list AND the download
@@ -484,7 +495,15 @@ A different key means every user must uninstall.
   once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
-- Camera WiFi is not broadcast until turned on from the camera's menu.
+- Camera WiFi is not broadcast until turned on from the camera's menu:
+  Preferences, Connections, Wireless Connections: On. That is a one-time
+  switch that survives power cycles and needs no GoPro app. Do NOT use
+  Connect Device, GoPro App for this: it parks the camera on a pairing
+  screen, which is a menu, and a camera in a menu does not record. The
+  WiFi name and password are under Preferences, Connections, Camera Info.
+- Quik and FlightPath cannot share the camera. FlightPath holds the WiFi
+  link, and Quik auto-connects over Bluetooth in the background and can
+  command the camera mid-recording. Force-stop Quik before FlightPath.
 - Rolling-shutter time model: `t = frame/fps + (y/H) * readout`.
 
 ### Conventions

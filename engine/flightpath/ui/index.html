@@ -343,11 +343,13 @@
       </div>
 
       <div class="connectBox" id="w1help" hidden>
-        <p><b>1. On the camera:</b> swipe down, Preferences, Connections, Connect Device,
-          <b>GoPro App</b>. Note the network name (GP&hellip;) and password it shows.
-          <b>Once the phone has joined, press the camera's Mode button to get back to
-          the shooting screen.</b> WiFi stays on. The camera will not record or
-          preview while it is sitting in a menu.</p>
+        <p><b>1. On the camera:</b> swipe down, Preferences, Connections,
+          <b>Wireless Connections: On</b>. It stays on from now on; no GoPro app is
+          needed, ever. The network name (GP&hellip;) and password are under
+          Preferences, Connections, <b>Camera Info</b>. <b>Then press Mode until the
+          camera shows its normal shooting screen.</b> The camera will not record or
+          preview while it is sitting in a menu, and the Connect Device screen counts
+          as a menu.</p>
         <p><b>2. On the phone:</b> tap below, pick the GP&hellip; network, enter the
           password. When Android says no internet, tap <b>keep connected</b>.</p>
         <div id="nativeConnect" hidden>
@@ -367,9 +369,10 @@
             <button class="prim" id="nConnect" style="flex:1">Connect to camera</button>
           </div>
           <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
-            stays on 5G for everything else. Before tapping: close the GoPro Quik app, put the
-            camera on <b>Connect Device &rsaquo; GoPro App</b> so its WiFi is broadcasting, and
-            make sure the phone's <b>Location</b> toggle is on (Android hides networks otherwise).</p>
+            stays on 5G for everything else. Before tapping: force-stop the GoPro Quik app (it
+            fights this app for the camera), have the camera's <b>Wireless Connections</b> on
+            and the camera on its shooting screen, and make sure the phone's <b>Location</b>
+            toggle is on (Android hides networks otherwise).</p>
           <div class="btnRow" style="margin-top:12px">
             <button class="sec" id="nUseCurrent" style="flex:1">Already joined in WiFi settings? Use that</button>
           </div>
@@ -854,7 +857,7 @@
       if (!anyGp) {
         var d = document.createElement("div");
         d.className = "none";
-        d.textContent = "No GoPro network in this list. The camera is not broadcasting: on the camera go to Preferences \u203a Connections \u203a Connect Device \u203a GoPro App, then scan again.";
+        d.textContent = "No GoPro network in this list. The camera is not broadcasting: on the camera go to Preferences \u203a Connections \u203a Wireless Connections and turn it On, press Mode back to the shooting screen, then scan again.";
         box.appendChild(d);
       }
     }

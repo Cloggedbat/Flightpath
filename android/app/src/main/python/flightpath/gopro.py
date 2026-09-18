@@ -118,7 +118,8 @@ class ProbeResult:
             return (
                 f"No answer from {self.host}.\n"
                 "  1. Turn the camera's WiFi on from its own menu "
-                "(Preferences > Connections > Connect Device > GoPro App).\n"
+                "(Preferences > Connections > Wireless Connections > On), "
+                "then press Mode back to the shooting screen.\n"
                 "  2. Join that network from the phone.\n"
                 "  3. Android may refuse to use a network with no internet. "
                 "Accept the 'stay connected' prompt when it appears."

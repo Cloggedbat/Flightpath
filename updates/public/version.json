@@ -1,5 +1,5 @@
 {
-  "versionCode": 21,
-  "versionName": "0.1.20",
-  "notes": "Your 06:41 test showed the real problem: the camera closes each recording almost at once, writing a 27 KB file instead of a 25 MB clip. The app now says exactly that, with the three usual causes (slow SD card, low battery, overheating), instead of telling you to press Mode. The camera test also prints the size of the newest clip on the card before it fires. To use it: record 3 seconds with the camera's own shutter button, then run Test camera and read the 'latest clip on the card' line."
+  "versionCode": 22,
+  "versionName": "0.1.21",
+  "notes": "Wording only: the app no longer tells you to turn the camera's WiFi on through Connect Device, GoPro App, which parks the camera on a pairing screen where it cannot record. Use Preferences, Connections, Wireless Connections: On (once, it stays on, no GoPro app needed), find the name and password under Camera Info, and press Mode back to the shooting screen. Force-stop Quik before using FlightPath; the two cannot share the camera."
 }
