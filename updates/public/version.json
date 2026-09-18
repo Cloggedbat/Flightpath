@@ -1,5 +1,5 @@
 {
-  "versionCode": 20,
-  "versionName": "0.1.19",
-  "notes": "The whole capture chain now runs on the PC against a stand-in camera that misbehaves exactly like this HERO9, and it passes: settings, calibration capture to a reference frame, a shot to a speed, the camera test. That found and fixed one more thing your last log showed: the camera lists a fresh clip at a few KB for many seconds, so the app now asks the download server for the file's true size before fetching it. Also: the screen stays on while the app is open. Next: Calibrate, capture the reference frame, then Record a shot."
+  "versionCode": 21,
+  "versionName": "0.1.20",
+  "notes": "Your 06:41 test showed the real problem: the camera closes each recording almost at once, writing a 27 KB file instead of a 25 MB clip. The app now says exactly that, with the three usual causes (slow SD card, low battery, overheating), instead of telling you to press Mode. The camera test also prints the size of the newest clip on the card before it fires. To use it: record 3 seconds with the camera's own shutter button, then run Test camera and read the 'latest clip on the card' line."
 }

@@ -49,7 +49,26 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.19, versionCode 20.
+App version 0.1.20, versionCode 21.
+
+0.1.20: the first 0.1.19 camera test (06:41, 2026-09-18) changes the
+diagnosis. For 25 s after the shutter, the media list AND the download
+server both said GX010551.MP4 was 27,639 bytes. That is not a lagging
+list, it is a closed file. A 3 s clip at 1080p240 is about 25 MB. The
+camera starts recording on the app's shutter and stops almost at once,
+writing a stub, and every "0 MB" and "0.0 MB" seen the day before was
+almost certainly the same thing. The 20 s of refused connections and the
+camera's screen going dark and coming back are the camera recovering from
+that aborted recording. Known causes on a HERO9: an SD card too slow for
+1080p240 HEVC, a nearly flat battery, or overheating; each puts a warning
+on the camera's screen. Unknown which, or whether the camera's own
+shutter button records normally. The app now says so: a new clip that
+closes under MIN_CLIP_BYTES is reported as a stub with those three causes
+(capture, camera test verdict, and the poll loop), never as "press
+Mode", and the camera test prints the size of the newest clip on the card
+before it fires, so a clip recorded with the camera's button can be
+compared in the app. The fake has stub_clips; the harness covers it (11
+more checks). CLIP_SETTLE_S is a class attribute so tests can shorten it.
 
 0.1.19 is the step from reactive to proven. engine/tests/fake_hero9.py is
 a HERO9 that misbehaves exactly like this one: 404 on the Open GoPro
@@ -310,10 +329,11 @@ Proven:
   status but 404s on both media list paths.
 
 NOT proven (in order of importance):
-1. That calibration capture works end to end on the real camera. It does
-   against tests/fake_hero9.py (0.1.19), and 0.1.12 recorded and
-   downloaded a real clip, failing only at decode, which 0.1.13 fixed. It
-   has still not been run on the phone since.
+1. That the camera records a real clip on the app's shutter at all. On
+   2026-09-18 it closed GX010551.MP4 at 27,639 bytes for a 3 s window
+   (see 0.1.20). Whether the camera's own button records normally is the
+   next fact to get: record 3 s by hand, then Test camera reads its size.
+   The chain after the clip is proven against tests/fake_hero9.py.
 2. Live view. The stream format is now understood (Camera facts) and
    TsUdpDataSource.kt strips the header; the phone has not yet shown a
    frame of it.
@@ -434,10 +454,14 @@ A different key means every user must uninstall.
   through and TsExtractor never synced, which is why live view was black.
   TsUdpDataSource.kt finds the first 0x47 that repeats 188 bytes later
   and serves from there; the camera test reports the offset it found.
-- After the camera reports idle, the media list lags the file: it names
-  the new clip at size 0, then at a few KB, stable across reads, twenty
-  seconds after idle, for a clip that is tens of MB. Never trust the
-  list's size for a fresh clip. Ask the download server (a one byte ranged
+- On the app's shutter the camera has been closing recordings almost at
+  once: GX010551.MP4 was 27,639 bytes for a 3 s window, agreed by the
+  media list and the download server for 25 s (2026-09-18). A file under
+  MIN_CLIP_BYTES is a stub, not a lag. Likely causes: SD card too slow
+  for 1080p240 HEVC, low battery, overheating; the camera's screen shows
+  which. Not yet known whether the camera's own button records normally.
+- The media list can also lag the file right after idle (0 bytes one
+  second after idle). Never trust the list's size for a fresh clip. Ask the download server (a one byte ranged
   GET; GoProClient.clip_size reads Content-Range), require MIN_CLIP_BYTES,
   and require the same size on two reads a second apart
   (_wait_for_new_clip, and the poll loop's _pending_size).

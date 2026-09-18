@@ -38,9 +38,13 @@ class FakeHero9:
     def __init__(self, clip_path: str, *, start_delay_s: float = 2.5,
                  finalize_s: float = 2.0, size_settle_s: float = 1.5,
                  list_lag_s: float = 4.0, range_support: bool = True,
+                 stub_clips: bool = False,
                  udp_datagrams: int = 500, udp_header: bytes = b""):
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
+        # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
+        # bytes. With this on, every recording is that stub.
+        self.stub_clips = stub_clips
         self.start_delay_s = start_delay_s
         self.finalize_s = finalize_s
         # File written (and served whole) size_settle_s after finalisation.
@@ -141,6 +145,15 @@ class FakeHero9:
             return min(f["size"], 30_000)
         return f["size"]
 
+    def _served_size(self, f: dict, now: float) -> int:
+        """What the download server can serve: the whole file once it is
+        closed, a growing prefix while the camera is still writing it."""
+        if now >= f["settle_at"] or self.size_settle_s <= 0:
+            return f["size"]
+        start = f["settle_at"] - self.size_settle_s
+        frac = max(0.0, min(1.0, (now - start) / self.size_settle_s))
+        return max(STUB_BYTES, int(f["size"] * frac))
+
     def _media(self, now: float) -> dict:
         fs = []
         for f in self.files:
@@ -196,7 +209,7 @@ class FakeHero9:
                 for f in self.files:
                     if f["n"] == name:
                         if f["n"].endswith(".MP4") and f["size"] == len(self.clip_bytes):
-                            body = self.clip_bytes if now >= f["settle_at"] else self.clip_bytes[:STUB_BYTES]
+                            body = self.clip_bytes[:self._served_size(f, now)]
                         else:
                             body = b"\x00" * f["size"]
                         if range_header and self.range_support:
@@ -238,7 +251,8 @@ class FakeHero9:
         self.dead_until = now + self.finalize_s
         name = f"GX01{self.next_no:04d}.MP4"
         self.next_no += 1
-        clip = {"n": name, "size": len(self.clip_bytes), "mod": int(time.time()),
+        size = 27_639 if self.stub_clips else len(self.clip_bytes)
+        clip = {"n": name, "size": size, "mod": int(time.time()),
                 "settle_at": now + self.finalize_s + self.size_settle_s,
                 "duration_s": round(duration, 2)}
         self.files.append(clip)

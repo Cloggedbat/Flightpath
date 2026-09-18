@@ -171,12 +171,65 @@ def main() -> int:
         w.stop()
         cam.stop()
 
+    stub_scenario(clip)
+
     print()
     if fails:
         print(f"{len(fails)} FAILED: {fails}")
         return 1
     print("all checks passed")
     return 0
+
+
+def stub_scenario(clip: str) -> None:
+    """The camera closes every recording at 27 KB (measured 2026-09-18).
+    The app must say so, in the capture and in the camera test, and must
+    not call it a menu-screen problem."""
+    print("--- stub clips ---", flush=True)
+    tmp = tempfile.mkdtemp(prefix="fp_stub_")
+    cam = FakeHero9(clip, stub_clips=True, list_lag_s=0.0).start()
+    client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
+    settings = Settings(clip_dir=os.path.join(tmp, "clips"),
+                        session_path=os.path.join(tmp, "session.json"),
+                        config_path=os.path.join(tmp, "config.json"),
+                        poll_seconds=0.5)
+    w = Worker(settings, client)
+    w.CLIP_SETTLE_S = 5.0                    # the answer is the same after 5 s or 25
+    w.STUB_AFTER_S = 3.0
+    try:
+        w._connect()
+        check("stub: connected", w.camera_ok, w.camera_note)
+        w.capture_reference_frame(seconds=0.5)
+        check("stub: calibration capture fails", w.calib_stage == "failed", w.calib_stage)
+        check("stub: says the camera stopped recording at once",
+              "stopped recording almost at once" in w.calib_message, w.calib_message)
+        check("stub: names the size", "26 KB" in w.calib_message, w.calib_message)
+        check("stub: does not blame the menu screen", "press Mode" not in w.calib_message)
+        check("stub: clip marked seen", any(p.endswith("GX010002.MP4") for p in w.seen))
+
+        w.begin_diagnostic()
+        w.camera_diagnostic()
+        log = list(w.diag_log)
+        check("stub: latest-clip line before the shutter",
+              any("latest clip on the card before the shutter" in l for l in log))
+        verdict = [l for l in log if "verdict:" in l]
+        check("stub: verdict says STUB CLIP with the size",
+              bool(verdict) and "STUB CLIP, 26 KB" in verdict[0], verdict[0] if verdict else "")
+        check("stub: verdict does not say press Mode",
+              bool(verdict) and "press Mode" not in verdict[0])
+
+        # The poll loop, on its own, must also recognise a stub and drop it.
+        w.begin_trigger()
+        threading.Thread(target=w.trigger, args=(0.5,), daemon=True).start()
+        w.start()
+        check("stub: poll loop drops the stub and says why",
+              wait_for(lambda: any(p.endswith("GX010004.MP4") for p in w.seen)
+                       and "stopped recording almost at once" in w.last_error, 20.0),
+              w.last_error)
+        check("stub: nothing queued for analysis", not w.snapshot()["queue"], str(w.snapshot()["queue"]))
+    finally:
+        w.stop()
+        cam.stop()
 
 
 if __name__ == "__main__":

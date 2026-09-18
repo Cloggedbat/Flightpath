@@ -30,10 +30,16 @@ import cv2
 from . import calibrate, cameras, detect, gopro, lens, nativecap
 from .session import Session, Shot
 
-# Below this a "clip" is a file header the camera has not filled yet. A single
-# second of 1080p240 HEVC is several MB; the HERO9 has listed a fresh clip at
-# a few KB, stable across reads, while still writing it.
+# Below this a "clip" is a file the camera closed almost as soon as it opened
+# it. A single second of 1080p240 HEVC is several MB. Measured 2026-09-18: the
+# HERO9 wrote GX010551.MP4 at 27,639 bytes for a 3 s shutter window, and both
+# the media list and the download server agreed on that size for 25 s.
 MIN_CLIP_BYTES = 256 * 1024
+
+STUB_HINT = ("the camera stopped recording almost at once and wrote only {kb} KB. "
+             "Look at its screen for an SD card, battery or temperature warning. "
+             "Then record a few seconds with the camera's own shutter button and "
+             "run Test camera: its 'latest clip' line says whether that one is real.")
 
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
 
@@ -136,7 +142,9 @@ class Worker:
         self.camera_configured = False
         self.preview_on = False
         self._misses = 0                 # consecutive failed polls
-        self._pending_size: dict[str, int] = {}   # new clips whose size has not settled
+        # New clips whose size has not settled: path -> (size, monotonic when
+        # that size was first seen).
+        self._pending_size: dict[str, tuple[int, float]] = {}
         self._baselined = False          # seen holds everything already on the card
         self._calib_started = 0.0        # monotonic() when a calibration capture began
         self.diag_log: list[str] = []    # camera test output, one line per step, newest last
@@ -258,6 +266,28 @@ class Worker:
             except Exception:                              # noqa: BLE001
                 pass                                       # state still recovering
         return False, err
+
+    # How long a new clip gets to reach a real, stable size.
+    CLIP_SETTLE_S = 25.0
+    # How long a tiny clip must sit unchanged before the poll loop calls it
+    # a stub. The measured stub held its size for the full 25 s.
+    STUB_AFTER_S = 20.0
+
+    def _stub_after(self, before: set[str]):
+        """A new main video that exists but never grew past MIN_CLIP_BYTES,
+        with its size corrected from the download server, or None."""
+        try:
+            fresh = [i for i in self.client.media_list()
+                     if i.is_main_video and i.path not in before]
+        except Exception:                                  # noqa: BLE001
+            return None
+        if not fresh:
+            return None
+        item = sorted(fresh, key=lambda i: i.mtime)[-1]
+        served = self.client.clip_size(item)
+        if served is not None:
+            item.size = served
+        return item if 0 < item.size < MIN_CLIP_BYTES else None
 
     def _wait_for_new_clip(self, before: set[str], timeout_s: float = 25.0,
                            trace=None):
@@ -403,9 +433,15 @@ class Worker:
                 self._note("shutter stop not confirmed; looking for the clip anyway")
 
             stage("fetching")
-            item = self._wait_for_new_clip(before, timeout_s=25.0)
+            item = self._wait_for_new_clip(before, timeout_s=self.CLIP_SETTLE_S)
             if item is None:
-                if unconfirmed:
+                stub = self._stub_after(before)
+                if stub is not None:
+                    # A file exists, so the shutter fired; the camera itself
+                    # gave up on the recording. Not a menu-screen problem.
+                    self.seen.add(stub.path)
+                    stage("failed", f"{stub.name}: " + STUB_HINT.format(kb=stub.size // 1024))
+                elif unconfirmed:
                     stage("failed", "no new clip appeared and the camera never "
                                     "confirmed it stopped. If its red light is on, "
                                     "press the shutter button, then try again.")
@@ -607,7 +643,20 @@ class Worker:
                         pass
                     before: set[str] = set()
                     try:
-                        before = {i.path for i in self.client.media_list()}
+                        items = self.client.media_list()
+                        before = {i.path for i in items}
+                        # The newest clip already on the card, with its size.
+                        # Record one with the camera's own button first and
+                        # this line says whether the camera and card can
+                        # record at all, independent of how the app fires it.
+                        vids = sorted((i for i in items if i.is_main_video),
+                                      key=lambda i: i.mtime)
+                        if vids:
+                            last = vids[-1]
+                            served = self.client.clip_size(last)
+                            size = served if served is not None else last.size
+                            self._note(f"latest clip on the card before the shutter: "
+                                       f"{last.name} ({size / 1048576:.1f} MB)")
                     except Exception as exc:               # noqa: BLE001
                         self._note(f"media list before: {type(exc).__name__}: {exc}")
                     try:
@@ -639,7 +688,8 @@ class Worker:
                     # settled size says how long the camera really recorded;
                     # 1080p240 HEVC is roughly 8 to 10 MB per second.
                     t1 = time.monotonic()
-                    clip = self._wait_for_new_clip(before, timeout_s=25.0, trace=self._note)
+                    clip = self._wait_for_new_clip(before, timeout_s=self.CLIP_SETTLE_S,
+                                                   trace=self._note)
                     if clip is not None:
                         # A still camera, not a shot. Mark it seen or the
                         # poll loop analyses it as one.
@@ -649,8 +699,16 @@ class Worker:
                                    "  (not analysed as a shot)")
                         verdict_shutter = f"ok, {clip.size / 1048576:.1f} MB clip"
                     else:
-                        self._note("new clip: none with a settled size within 25 s")
-                        verdict_shutter = "NO CLIP (camera on a menu screen? press Mode)"
+                        stub = self._stub_after(before)
+                        if stub is not None:
+                            self.seen.add(stub.path)
+                            self._note(f"new clip: {stub.path} is only {stub.size // 1024} KB "
+                                       f"after {self.CLIP_SETTLE_S:.0f} s")
+                            verdict_shutter = (f"STUB CLIP, {stub.size // 1024} KB: "
+                                               + STUB_HINT.format(kb=stub.size // 1024))
+                        else:
+                            self._note(f"new clip: none within {self.CLIP_SETTLE_S:.0f} s")
+                            verdict_shutter = "NO CLIP (camera on a menu screen? press Mode)"
                 finally:
                     with self._lock:
                         self.recording = False
@@ -913,18 +971,31 @@ class Worker:
         # once its size is non-zero and unchanged since the previous tick,
         # the polling twin of _wait_for_new_clip. It is not in seen yet, so
         # it comes round again next tick.
+        now = time.monotonic()
         settled = []
         for i in fresh:
             # Ask the download server, not the list: the list lags the file
             # by seconds and can say a few KB for a clip that is tens of MB.
             served = self.client.clip_size(i)
             size = served if served is not None else i.size
-            if size >= MIN_CLIP_BYTES and self._pending_size.get(i.path) == size:
+            prev = self._pending_size.get(i.path)
+            if prev is None or prev[0] != size:
+                self._pending_size[i.path] = (size, now)
+                continue
+            if size >= MIN_CLIP_BYTES:
                 i.size = size
                 settled.append(i)
                 self._pending_size.pop(i.path, None)
-            else:
-                self._pending_size[i.path] = size
+            elif size > 0 and now - prev[1] >= self.STUB_AFTER_S:
+                # Tiny and unchanged for a long time: the camera gave up on
+                # this recording. Say so once and stop asking about it. Two
+                # equal reads are not enough; a file still being written can
+                # show the same size twice.
+                self.seen.add(i.path)
+                self._pending_size.pop(i.path, None)
+                self._note(f"{i.name}: " + STUB_HINT.format(kb=size // 1024))
+                with self._lock:
+                    self.last_error = f"{i.name}: " + STUB_HINT.format(kb=size // 1024)
         fresh = settled
 
         if self.settings.mode == "focus":
