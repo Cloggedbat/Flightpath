@@ -49,7 +49,27 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.15, versionCode 16.
+App version 0.1.16, versionCode 17.
+
+0.1.16: the 0.1.15 camera test log (19:22, 2026-09-17) shows the flap
+gone (no "camera poll failed" lines) and the test at 29 s, and it shows the
+next problem before it could bite the calibration capture. After
+"recorded 3.0 s" the camera refused every connection (Errno 111) for 19 s
+before reporting idle. trigger() confirmed the stop with a six-try loop
+that fast refusals exhaust in about 4 s, and capture_reference_frame()
+treated an unconfirmed stop as a failed shutter and never looked for the
+clip. Now _stop_and_confirm() keeps sending stop until state reports idle
+or 30 s pass (STOP_CONFIRM_S), shared by trigger() and the camera test;
+trigger() returns "unconfirmed" rather than a message; and the
+calibration capture looks for its clip regardless, failing only if none
+appears, with a "press the shutter button" hint when the stop was never
+confirmed. Harness: 12 checks. The test's "new clip" line now shows the
+clip size, which is the only way to know how long the camera really
+recorded (1080p240 HEVC is roughly 8 to 10 MB per second). Also in that
+log: the preview stream was raw TS at byte 0 with 3 to 7 packets per
+datagram, unlike the 18:31 run's 12 byte header. Almost certainly the two
+start paths (Open GoPro stream/start vs legacy gpStream) give two formats;
+TsUdpDataSource.kt finds the offset per datagram so both play.
 
 0.1.15 fixes the flapping, from one camera test log (18:31, 2026-09-17).
 The tick's heartbeat kept polling state() every 3 s while a capture or a

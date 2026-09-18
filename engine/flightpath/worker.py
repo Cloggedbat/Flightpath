@@ -224,6 +224,35 @@ class Worker:
             self.recording = True
         return True
 
+    # How long to keep sending stop and waiting for a clean idle. Measured
+    # 2026-09-17: after a 3 s clip the HERO9 refused every connection for
+    # 19 s, then answered idle. Six fast refusals used to exhaust the old
+    # try-count loop in 4 s and call a finished recording unconfirmed.
+    STOP_CONFIRM_S = 30.0
+
+    def _stop_and_confirm(self) -> tuple[bool, str]:
+        """Send stop until state reports a clean idle or the deadline passes.
+
+        is_recording() returns None while state is unreadable and a real
+        False once the camera is idle; only that False is proof it stopped.
+        Returns (confirmed, last stop error or "").
+        """
+        deadline = time.monotonic() + self.STOP_CONFIRM_S
+        err = ""
+        while time.monotonic() < deadline:
+            try:
+                self.client.stop_recording()
+                err = ""
+            except Exception as exc:                       # noqa: BLE001
+                err = str(exc)
+            time.sleep(0.7)
+            try:
+                if self.client.is_recording() is False:
+                    return True, err
+            except Exception:                              # noqa: BLE001
+                pass                                       # state still recovering
+        return False, err
+
     def trigger(self, seconds: float = 3.0) -> str:
         """Manual shutter. Call begin_trigger() first to claim it.
 
@@ -270,25 +299,18 @@ class Worker:
             # still unresponsive and a real False once recording has ended, so
             # a clean False is proof the camera stopped. Keep sending stop
             # until we see it.
-            for _ in range(6):
-                try:
-                    self.client.stop_recording()
-                except Exception:                          # noqa: BLE001
-                    pass
-                time.sleep(0.7)
-                try:
-                    if self.client.is_recording() is False:
-                        return "recorded"
-                except Exception:                          # noqa: BLE001
-                    pass                                   # state still recovering
-            # Never saw a clean idle across ~4 s of retries. Either the camera
-            # is genuinely stuck recording or this firmware never reports idle.
-            # Say so without crashing the capture.
-            msg = ("sent, but could not confirm the camera stopped. "
-                   "If its red light is on, press the shutter button.")
+            confirmed, _ = self._stop_and_confirm()
+            if confirmed:
+                return "recorded"
+            # Never saw a clean idle inside the deadline. Either the camera is
+            # genuinely stuck recording or it is still finalising the file.
+            # The caller decides by the media list; say so without crashing.
+            msg = (f"sent, but could not confirm the camera stopped within "
+                   f"{self.STOP_CONFIRM_S:.0f} s. If its red light is on, press "
+                   "the shutter button.")
             with self._lock:
                 self.last_error = f"trigger: {msg}"
-            return msg
+            return "unconfirmed"
         except Exception as exc:                           # noqa: BLE001
             with self._lock:
                 self.last_error = f"trigger failed: {exc}"
@@ -325,10 +347,15 @@ class Worker:
             else:
                 stage("failed", "camera is busy")
                 return
-            if result != "recorded":
+            if result not in ("recorded", "unconfirmed"):
                 # The shutter did not happen. Do not go looking for a clip.
                 stage("failed", f"shutter: {result}")
                 return
+            unconfirmed = result == "unconfirmed"
+            if unconfirmed:
+                # On this camera the clip is the only reliable signal, so an
+                # unconfirmed stop is a reason to look harder, not to give up.
+                self._note("shutter stop not confirmed; looking for the clip anyway")
 
             stage("fetching")
             item = None
@@ -340,9 +367,14 @@ class Worker:
                     item = sorted(fresh, key=lambda i: i.mtime)[-1]
                     break
             if item is None:
-                stage("failed", "no new clip appeared. Make sure the camera is on "
-                                "its shooting screen (press Mode), not a menu, then "
-                                "try again.")
+                if unconfirmed:
+                    stage("failed", "no new clip appeared and the camera never "
+                                    "confirmed it stopped. If its red light is on, "
+                                    "press the shutter button, then try again.")
+                else:
+                    stage("failed", "no new clip appeared. Make sure the camera is on "
+                                    "its shooting screen (press Mode), not a menu, then "
+                                    "try again.")
                 return
 
             path = self.client.download(item, self.settings.clip_dir)
@@ -550,34 +582,27 @@ class Worker:
                     # Stop, and keep sending stop until state reports a clean
                     # idle, exactly as trigger() does. None means state is
                     # still recovering; only a real False proves it stopped.
-                    idle = None
-                    stop_err = ""
-                    for _ in range(6):
-                        try:
-                            self.client.stop_recording()
-                            stop_err = ""
-                        except Exception as exc:           # noqa: BLE001
-                            stop_err = str(exc)
-                        time.sleep(0.7)
-                        try:
-                            idle = self.client.is_recording()
-                        except Exception:                  # noqa: BLE001
-                            idle = None
-                        if idle is False:
-                            break
+                    t0 = time.monotonic()
+                    confirmed, stop_err = self._stop_and_confirm()
                     if stop_err:
                         self._note(f"shutter stop: {stop_err}")
-                    self._note(f"after stop: encoding = {idle}"
-                               + ("  STILL RECORDING, press the camera's button" if idle is True else "")
-                               + ("  (state not back yet)" if idle is None else ""))
+                    self._note(f"after stop: {'idle confirmed' if confirmed else 'NOT confirmed'}"
+                               f" after {time.monotonic() - t0:.0f} s"
+                               + ("" if confirmed else
+                                  "; if the red light is on, press the camera's button"))
                     time.sleep(1.0)
                     try:
-                        after = {i.path for i in self.client.media_list()}
-                        new = sorted(after - before)
+                        items = self.client.media_list()
+                        new = sorted(i.path for i in items if i.path not in before)
+                        size = {i.path: i.size for i in items}
                         # The test's clip is a still camera, not a shot. Mark
-                        # it seen or the poll loop analyses it as one.
+                        # it seen or the poll loop analyses it as one. Its size
+                        # says how long the camera really recorded: 1080p240
+                        # HEVC is roughly 8 to 10 MB per second.
                         self.seen.update(new)
-                        self._note("new clip: " + (", ".join(new) if new else "none")
+                        self._note("new clip: "
+                                   + (", ".join(f"{p} ({size.get(p, 0) // 1048576} MB)" for p in new)
+                                      if new else "none")
                                    + ("  (not analysed as a shot)" if new else ""))
                     except Exception as exc:               # noqa: BLE001
                         self._note(f"media list after: {type(exc).__name__}: {exc}")

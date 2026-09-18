@@ -1,5 +1,5 @@
 {
-  "versionCode": 16,
-  "versionName": "0.1.15",
-  "notes": "Fixes the connection flapping: the app no longer counts a camera that is busy recording as a lost camera, so it stays connected through every capture and camera test. The camera test now records for a real 3 seconds instead of 32, and its clip is not analysed as a shot. Live view: the camera's stream turned out to be MPEG-TS wrapped in a 12 byte header; the app now strips it. Apply camera settings and Test camera are disabled while the camera is busy, and Apply says so instead of failing four times."
+  "versionCode": 17,
+  "versionName": "0.1.16",
+  "notes": "The camera can take up to 20 seconds to answer after it stops recording. The app now waits up to 30 seconds for that instead of 4, and the calibration capture goes looking for its clip either way, so a slow camera no longer turns a good recording into a failed capture. The camera test shows the size of the clip it made. Update, then go to Calibrate and capture the reference frame."
 }
