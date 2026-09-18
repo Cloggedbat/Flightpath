@@ -1,5 +1,5 @@
 {
-  "versionCode": 22,
-  "versionName": "0.1.21",
-  "notes": "Wording only: the app no longer tells you to turn the camera's WiFi on through Connect Device, GoPro App, which parks the camera on a pairing screen where it cannot record. Use Preferences, Connections, Wireless Connections: On (once, it stays on, no GoPro app needed), find the name and password under Camera Info, and press Mode back to the shooting screen. Force-stop Quik before using FlightPath; the two cannot share the camera."
+  "versionCode": 23,
+  "versionName": "0.1.22",
+  "notes": "If the phone's own WiFi is switched off, the scan now says so instead of blaming the camera; the app joins the camera over WiFi even though your data stays on 5G. If the camera is not named GP..., type its exact name from Preferences, Connections, Camera Info."
 }

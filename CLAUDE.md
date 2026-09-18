@@ -49,7 +49,16 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.21, versionCode 22.
+App version 0.1.22, versionCode 23.
+
+0.1.22: the phone could not see the camera's WiFi even on the pairing
+screen. The app never checked whether the phone's own WiFi radio was on;
+with it off every scan is empty and the wizard blamed the camera. The
+scan now reports wifi_off and the wizard says to turn the phone's WiFi
+on (data stays on 5G). The join-failure hint no longer points at the
+pairing screen and says to type the exact name from Camera Info if Quik
+renamed the camera to something not starting with GP, which the "any
+GoPro" match (GP prefix) would never find.
 
 0.1.21: copy only. Every instruction in the app, the probe's hint and
 RANGE.md told the user to turn the camera's WiFi on through Preferences,

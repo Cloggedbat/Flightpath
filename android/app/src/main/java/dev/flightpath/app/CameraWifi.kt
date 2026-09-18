@@ -70,8 +70,9 @@ class CameraWifi(private val context: Context) {
             override fun onUnavailable() {
                 Log.w(TAG, "camera network unavailable")
                 listener.onUnavailable(
-                    "Could not join the camera's WiFi. Is the camera's WiFi on " +
-                    "(Preferences > Connections > Connect Device > GoPro App)?"
+                    "Could not join the camera's WiFi. Is the phone's WiFi switched on, " +
+                    "and the camera's (Preferences > Connections > Wireless Connections)? " +
+                    "If the camera is not named GP..., type its exact name from Camera Info."
                 )
             }
 

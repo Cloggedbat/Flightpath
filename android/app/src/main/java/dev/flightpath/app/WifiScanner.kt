@@ -33,6 +33,11 @@ class WifiScanner(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
+    /** The phone's own WiFi radio. Off means no scan results and nothing to
+     *  join, whatever the camera is doing; the app must say so rather than
+     *  blame the camera. */
+    fun wifiEnabled(): Boolean = wifi.isWifiEnabled
+
     fun start(): Boolean {
         if (!hasPermission()) return false
         try {

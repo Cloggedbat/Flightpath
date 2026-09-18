@@ -885,6 +885,10 @@
         $("nScan").disabled = false;
         $("nScan").textContent = "Scan for the camera's WiFi";
         $("nets").innerHTML = '<div class="none">Android needs the Location permission to list WiFi networks. It is used for nothing else. Allow it, or type the network name by hand.</div>';
+      } else if (state === "wifi_off") {
+        $("nScan").disabled = false;
+        $("nScan").textContent = "Scan for the camera's WiFi";
+        $("nets").innerHTML = '<div class="none">The phone’s WiFi is switched off. Turn it on (pull down from the top of the screen and tap the WiFi icon). This app joins the camera over WiFi; your data stays on 5G. Then scan again.</div>';
       }
     };
 

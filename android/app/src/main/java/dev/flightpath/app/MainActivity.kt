@@ -165,7 +165,9 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun scanNetworks() {
             runOnUiThread {
-                if (scanner.hasPermission()) {
+                if (!scanner.wifiEnabled()) {
+                    js("window.__nativeScan && window.__nativeScan('wifi_off')")
+                } else if (scanner.hasPermission()) {
                     scanner.start()
                     js("window.__nativeScan && window.__nativeScan('started')")
                 } else {
