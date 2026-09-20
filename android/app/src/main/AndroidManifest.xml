@@ -12,6 +12,18 @@
          stores, or transmits a location. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+    <!-- Wake the camera's WiFi. A HERO9 does not broadcast WiFi until an app
+         asks over Bluetooth ("camera WiFi must be enabled upon each connection
+         via BLE", Open GoPro). Used only to find the camera, read its own
+         network name and password, and send that one command. neverForLocation
+         tells Android this app never derives a location from Bluetooth. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"

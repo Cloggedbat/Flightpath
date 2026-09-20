@@ -1,5 +1,5 @@
 {
-  "versionCode": 24,
-  "versionName": "0.1.23",
-  "notes": "Corrects the last update's instructions. A HERO9 only switches its WiFi on when an app asks over Bluetooth, so for now: open Quik until it shows the camera connected, force-stop Quik, press Mode back to the shooting screen, then connect here. The app will send that Bluetooth request itself in a coming version so Quik is never needed again."
+  "versionCode": 25,
+  "versionName": "0.1.24",
+  "notes": "The GoPro Quik app is no longer needed. A HERO9 keeps its WiFi switched off until an app asks over Bluetooth, and FlightPath now sends that request itself using GoPro's own published protocol. The Camera step is one button: Turn on camera WiFi and connect. It wakes the camera, reads its network name and password off the camera, and joins it. The first time, put the camera on Preferences, Connections, Connect Device, GoPro App so it pairs with the phone, and accept the pairing request; after that just leave the camera on its shooting screen."
 }

@@ -2,6 +2,7 @@ package dev.flightpath.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -28,10 +29,23 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
     private lateinit var wifi: CameraWifi
+    private lateinit var ble: CameraBle
     private lateinit var scanner: WifiScanner
     private lateinit var updater: Updater
     private lateinit var live: LiveView
     private val prefs by lazy { getSharedPreferences("flightpath", Context.MODE_PRIVATE) }
+
+    /** Nearby devices, for waking the camera's WiFi over Bluetooth. */
+    private val blePermission =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+            if (grants.values.all { it }) {
+                startBleWake()
+            } else {
+                js("window.__nativeBle && window.__nativeBle('failed', " +
+                    q("Without the Nearby devices permission the app cannot wake the camera's " +
+                      "WiFi. You can still turn it on with the GoPro Quik app instead.") + ")")
+            }
+        }
 
     private val locationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -51,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         web = findViewById(R.id.web)
         wifi = CameraWifi(this)
+        ble = CameraBle(this)
         scanner = WifiScanner(this)
         updater = Updater(this)
         live = LiveView(this) { state, msg ->
@@ -116,20 +131,25 @@ class MainActivity : AppCompatActivity() {
         /** Join the camera's WiFi for this app only. Empty ssid = any GP* network. */
         @JavascriptInterface
         fun connectCamera(ssid: String, password: String) {
-            prefs.edit().putString("ssid", ssid).putString("pw", password).apply()
+            joinCameraWifi(ssid, password)
+        }
+
+        /**
+         * Turn the camera's WiFi on over Bluetooth, then join it. A HERO9 does
+         * not broadcast WiFi until an app asks; this is that request, so the
+         * GoPro Quik app is not needed at all.
+         */
+        @JavascriptInterface
+        fun wakeCamera() {
             runOnUiThread {
-                wifi.connect(ssid.ifBlank { null }, password, object : CameraWifi.Listener {
-                    override fun onConnected(ssid: String) {
-                        pyReconnect()
-                        js("window.__nativeWifi && window.__nativeWifi('connected', ${q(ssid)})")
-                    }
-                    override fun onUnavailable(reason: String) {
-                        js("window.__nativeWifi && window.__nativeWifi('unavailable', ${q(reason)})")
-                    }
-                    override fun onLost() {
-                        js("window.__nativeWifi && window.__nativeWifi('lost', '')")
-                    }
-                })
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    ble.missingPermission() != null) {
+                    blePermission.launch(arrayOf(
+                        android.Manifest.permission.BLUETOOTH_SCAN,
+                        android.Manifest.permission.BLUETOOTH_CONNECT))
+                } else {
+                    startBleWake()
+                }
             }
         }
 
@@ -224,6 +244,48 @@ class MainActivity : AppCompatActivity() {
         fun isBound(): Boolean = wifi.isBound
     }
 
+    /** Join the camera's access point for this app only. */
+    private fun joinCameraWifi(ssid: String, password: String) {
+        prefs.edit().putString("ssid", ssid).putString("pw", password).apply()
+        runOnUiThread {
+            wifi.connect(ssid.ifBlank { null }, password, object : CameraWifi.Listener {
+                override fun onConnected(ssid: String) {
+                    pyReconnect()
+                    js("window.__nativeWifi && window.__nativeWifi('connected', ${q(ssid)})")
+                }
+                override fun onUnavailable(reason: String) {
+                    js("window.__nativeWifi && window.__nativeWifi('unavailable', ${q(reason)})")
+                }
+                override fun onLost() {
+                    js("window.__nativeWifi && window.__nativeWifi('lost', '')")
+                }
+            })
+        }
+    }
+
+    /**
+     * The Bluetooth wake, then straight into the WiFi join: one tap from a
+     * camera sitting there doing nothing to a connected engine. The password
+     * never reaches the page; it comes off the camera and goes to the WiFi
+     * layer inside this process.
+     */
+    private fun startBleWake() {
+        ble.wake(object : CameraBle.Listener {
+            override fun onProgress(message: String) {
+                js("window.__nativeBle && window.__nativeBle('progress', ${q(message)})")
+            }
+
+            override fun onWoken(ssid: String, password: String) {
+                js("window.__nativeBle && window.__nativeBle('woken', ${q(ssid)})")
+                joinCameraWifi(ssid, password)
+            }
+
+            override fun onFailed(reason: String) {
+                js("window.__nativeBle && window.__nativeBle('failed', ${q(reason)})")
+            }
+        })
+    }
+
     private fun pyReconnect() {
         thread { runCatching { Python.getInstance().getModule("android_main").callAttr("reconnect") } }
     }
@@ -241,6 +303,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         scanner.stop()
+        ble.cancel()
         wifi.disconnect()
         runCatching { Python.getInstance().getModule("android_main").callAttr("stop") }
         super.onDestroy()

@@ -49,7 +49,30 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.23, versionCode 24.
+App version 0.1.24, versionCode 25.
+
+0.1.24 removes the GoPro app from the loop. CameraBle.kt sends the
+Bluetooth request that makes a HERO9 switch its WiFi on, so Quik is not
+needed at all. This is GoPro's own published protocol (Open GoPro), not a
+workaround: the camera does not care which app asks. From GoPro's
+tutorial source, verified 2026-09-18: service FEA6; command request
+b5f90072-aa8d-11e3-9046-0002a5d5c51b, response b5f90073; WiFi SSID
+b5f90002 and password b5f90003; write 03:17:01:01 (length 3, command
+0x17 AP control, one payload byte, 1 = on) and a response whose third
+byte is 0x00 means the WiFi is coming up. Android allows one GATT
+operation at a time, so the class is a state machine: scan for FEA6 or a
+GoPro name, connect, discover, read SSID, read password, subscribe to
+responses, write the command, wait 2.5 s for the access point, then join
+it with the existing CameraWifi path. The wizard is now one green button,
+"Turn on camera WiFi and connect"; the scan and manual SSID and password
+fields are behind "Do it by hand instead". The password goes from the
+camera to the WiFi layer inside the process and never reaches the page.
+New permissions: BLUETOOTH_SCAN (with neverForLocation, so no location is
+derivable) and BLUETOOTH_CONNECT, requested at the button, plus the
+pre-31 BLUETOOTH and BLUETOOTH_ADMIN capped at maxSdkVersion 30. The
+camera must be bonded to the phone once, which is what Connect Device,
+GoPro App is for; after that it reconnects silently. Compiled, not yet
+run on the phone: the whole path needs the camera to test.
 
 0.1.23 corrects 0.1.21. With the phone's WiFi on and the camera on its
 pairing screen, no GP network was visible anywhere on the phone. A HERO9
@@ -456,7 +479,9 @@ A different key means every user must uninstall.
   realpath-contained, downloads are size-capped, decode is byte-budgeted.
 - All UI text from the engine is HTML-escaped. CSP headers stay on.
 - Android permissions are the minimum: INTERNET (updater only), WiFi state
-  and change (camera join), FINE_LOCATION (only to list WiFi networks).
+  and change (camera join), FINE_LOCATION (only to list WiFi networks),
+  BLUETOOTH_SCAN with neverForLocation and BLUETOOTH_CONNECT (only to wake
+  the camera's WiFi, which a HERO9 does not do on its own).
   Cleartext HTTP is allowed only to 127.0.0.1, localhost and 10.5.5.9.
 - Anything that talks to the internet from the phone must be explicit,
   user-triggered, and say what it sends. Today that is only the update check.
@@ -518,18 +543,18 @@ A different key means every user must uninstall.
   once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
-- Camera WiFi is NOT broadcast until an app asks for it over Bluetooth
-  (Open GoPro BLE "AP control"; community HERO9 docs: "the HERO9 doesn't
-  enable WiFi anymore if it doesn't receive a BLE command to do so").
-  Wireless Connections: On only enables Bluetooth advertising, and the
-  Connect Device pairing screen only advertises Bluetooth too. Measured
-  2026-09-18: on the pairing screen, phone WiFi on, no GP network visible
-  anywhere. Until FlightPath sends that BLE command itself, Quik must be
-  opened once per session until it shows the camera connected, then
-  force-stopped. The 0.1.21 copy saying no GoPro app is ever needed was
-  wrong. Do not leave the camera on the pairing screen afterwards: it is a
-  menu, and a camera in a menu does not record. The WiFi name and password
-  are under Preferences, Connections, Camera Info.
+- Camera WiFi is NOT broadcast until an app asks for it over Bluetooth.
+  GoPro's own words: "camera WiFi must be enabled upon each connection via
+  BLE." Wireless Connections: On only enables Bluetooth advertising, and
+  the Connect Device pairing screen only advertises Bluetooth too.
+  Measured 2026-09-18: on the pairing screen, phone WiFi on, no GP network
+  visible anywhere. Since 0.1.24 the app sends that request itself
+  (CameraBle.kt, service FEA6, write 03:17:01:01 to b5f90072; SSID at
+  b5f90002 and password at b5f90003). The camera needs to be bonded to the
+  phone once, on Connect Device, GoPro App. Do not leave it on that screen
+  afterwards: it is a menu, and a camera in a menu does not record. The
+  WiFi name and password are also under Preferences, Connections, Camera
+  Info for the manual path.
 - Quik and FlightPath cannot share the camera. FlightPath holds the WiFi
   link, and Quik auto-connects over Bluetooth in the background and can
   command the camera mid-recording. Force-stop Quik before FlightPath.

@@ -110,13 +110,12 @@ python run.py --gopro-host 10.5.5.9   # PC joined to the camera's WiFi
 
 ## Every session, about 5 minutes
 
-1. **Camera on, WiFi on.** On the HERO9: Preferences, Connections, Wireless
-   Connections: On. A HERO9 only switches its WiFi on when an app asks over
-   Bluetooth, so open the Quik app until it shows the camera connected, then
-   force-stop Quik (two apps on one camera fight each other) and press Mode
-   back to the shooting screen. The network name and password are under
-   Preferences, Connections, Camera Info. Until FlightPath sends that
-   Bluetooth request itself, this is the one thing Quik is still for.
+1. **Camera on, on its shooting screen.** Preferences, Connections, Wireless
+   Connections: On (once). Then in FlightPath tap **Turn on camera WiFi and
+   connect**: a HERO9 keeps its WiFi off until an app asks over Bluetooth,
+   and the app sends that request itself. No GoPro app is involved. The
+   first time only, put the camera on Connections, Connect Device, GoPro App
+   so it pairs with the phone, and accept the pairing request.
 2. **Join it from the phone.** Android will warn that the network has no
    internet. Accept and stay connected, or it will silently drop back to
    cellular and nothing will work.

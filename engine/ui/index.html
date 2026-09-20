@@ -344,17 +344,23 @@
 
       <div class="connectBox" id="w1help" hidden>
         <p><b>1. On the camera:</b> swipe down, Preferences, Connections,
-          <b>Wireless Connections: On</b>. Then open the GoPro Quik app and wait until
-          it shows the camera connected: a HERO9 only switches its WiFi on when an app
-          asks over Bluetooth, and that is Quik's one job here. <b>Force-stop Quik</b>,
-          then <b>press Mode until the camera shows its normal shooting screen</b>. The
-          network name (GP&hellip;) and password are under Preferences, Connections,
-          <b>Camera Info</b>. The camera will not record or preview while it is sitting
-          in a menu, and the Connect Device screen counts as a menu.</p>
-        <p><b>2. On the phone:</b> tap below, pick the GP&hellip; network, enter the
-          password. When Android says no internet, tap <b>keep connected</b>.</p>
+          <b>Wireless Connections: On</b>. Leave the camera on its normal shooting
+          screen. <b>The very first time only</b>, also go to Connections, Connect
+          Device, <b>GoPro App</b> so the camera will pair with this phone, and accept
+          the pairing request when it appears. After that the camera is remembered.</p>
+        <p><b>2. On the phone:</b> tap the green button below. A GoPro keeps its WiFi
+          off until an app asks over Bluetooth, so the app does that, reads the
+          camera's own network name and password, and joins it. No GoPro app is
+          needed. When Android says the network has no internet, tap
+          <b>keep connected</b>.</p>
         <div id="nativeConnect" hidden>
           <div class="btnRow" style="margin-bottom:4px">
+            <button class="prim" id="nWake" style="flex:1">Turn on camera WiFi and connect</button>
+          </div>
+          <p class="calibStat" id="nWakeStat" style="margin:4px 0 12px"></p>
+          <details style="margin-bottom:8px">
+            <summary style="font-size:13px;opacity:.85">Do it by hand instead</summary>
+          <div class="btnRow" style="margin:8px 0 4px">
             <button class="sec" id="nScan" style="flex:1">Scan for the camera's WiFi</button>
           </div>
           <div class="nets" id="nets" hidden></div>
@@ -369,14 +375,16 @@
           <div class="btnRow">
             <button class="prim" id="nConnect" style="flex:1">Connect to camera</button>
           </div>
-          <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
-            stays on 5G for everything else. Before tapping: let Quik wake the camera's WiFi
-            (step 1), then force-stop Quik (it fights this app for the camera), have the
-            camera on its shooting screen, and make sure the phone's <b>WiFi</b> and
-            <b>Location</b> toggles are on (Android hides networks otherwise).</p>
+          <p style="margin:8px 0 0;font-size:12px">The camera's WiFi has to be on already for
+            this path (the button above does that for you). The name and password are on the
+            camera under Preferences, Connections, Camera Info. The phone's <b>WiFi</b> and
+            <b>Location</b> toggles must be on; Android hides networks otherwise.</p>
           <div class="btnRow" style="margin-top:12px">
             <button class="sec" id="nUseCurrent" style="flex:1">Already joined in WiFi settings? Use that</button>
           </div>
+          </details>
+          <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
+            stays on 5G for everything else, so calls and messages keep working.</p>
         </div>
         <div class="btnRow" id="webConnect">
           <a class="btnLink" id="w1wifi"
@@ -893,6 +901,36 @@
       }
     };
 
+    // ---- Bluetooth wake ----
+    // A GoPro keeps its WiFi radio off until an app asks over Bluetooth. This
+    // sends that request, reads the camera's own network name and password,
+    // and hands them straight to the WiFi join. The password never comes back
+    // into this page.
+    $("nWake").addEventListener("click", function () {
+      $("nWake").disabled = true;
+      $("nWakeStat").className = "calibStat";
+      $("nWakeStat").textContent = "Waking the camera over Bluetooth…";
+      try { native.wakeCamera(); } catch (e) {
+        $("nWake").disabled = false;
+        $("nWakeStat").className = "calibStat bad";
+        $("nWakeStat").textContent = "This build cannot use Bluetooth. Use the manual path below.";
+      }
+    });
+    window.__nativeBle = function (state, detail) {
+      if (state === "progress") {
+        $("nWakeStat").className = "calibStat";
+        $("nWakeStat").textContent = detail || "";
+      } else if (state === "woken") {
+        $("nWakeStat").className = "calibStat";
+        $("nWakeStat").textContent = "Camera WiFi is on (" + (detail || "") + "). Joining it…";
+        if (detail) $("nSsid").value = detail;
+      } else if (state === "failed") {
+        $("nWake").disabled = false;
+        $("nWakeStat").className = "calibStat bad";
+        $("nWakeStat").textContent = detail || "Could not wake the camera.";
+      }
+    };
+
     $("nUseCurrent").addEventListener("click", function () {
       $("w1stat").className = "calibStat";
       $("w1stat").textContent = "Binding the app to the phone\u2019s current WiFi\u2026";
@@ -901,7 +939,10 @@
     // Called back from Kotlin when the network binding changes.
     window.__nativeWifi = function (state, detail) {
       $("nConnect").disabled = false;
+      $("nWake").disabled = false;
       if (state === "connected") {
+        $("nWakeStat").className = "calibStat";
+        $("nWakeStat").textContent = "Connected to " + detail + ".";
         $("w1stat").className = "calibStat";
         $("w1stat").textContent = "Joined " + detail + ". Checking the camera…";
         setTimeout(function () { connectCamera($("nConnect"), $("w1stat")); }, 1500);
