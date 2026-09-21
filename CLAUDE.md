@@ -49,7 +49,36 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.25, versionCode 26.
+App version 0.1.27, versionCode 28.
+
+0.1.27 stops assuming the camera lives at 10.5.5.9. With the camera on
+its normal shooting screen the engine still could not reach it after a
+good WiFi join, so the menu theory is dead. An access point is the DHCP
+server and gateway for its own network, so CameraWifi.cameraHost() reads
+the camera's real address off the link (dhcpServerAddress on API 30+,
+else the default route's gateway) and MainActivity hands it to
+android_main.set_camera_host() before every reconnect, which repoints
+GoProClient and clears its resolved endpoint paths. 10.5.5.9 is a
+convention, not a promise, and a camera answering elsewhere looked
+exactly like a camera that was not there. The link summary now prints
+the camera address it found, and "no camera at ..." names the address
+actually tried instead of a hardcoded one.
+
+0.1.26: the Bluetooth wake WORKS on the real camera, first try (08:44,
+2026-09-21). "Camera WiFi is on (HERO9 Black). Joining it", then
+"Connected to HERO9 Black." So CameraBle.kt is proven and Quik is out of
+the loop for good. Two things learned: this camera's WiFi SSID is
+"HERO9 Black", not GP followed by digits, so the GP prefix match and
+every "GP..." message were wrong for it; and after a successful join the
+engine still could not reach 10.5.5.9 ("Still no camera"). The old
+message blamed the GP network and 5G, which says nothing. CameraWifi now
+exposes linkSummary(): whether bindProcessToNetwork succeeded, the
+interface, and the phone's own addresses on it. A 10.5.5.x address means
+the link is good and the camera is not serving, which on this camera
+means it is sitting in a menu, so the wizard says to press Mode; no such
+address means the join is at fault and says to wake it again. The
+failure line now carries that summary and the engine's own camera_note.
+Not yet known which it is.
 
 0.1.25 asks the camera why a recording aborted instead of guessing. The
 19:11 log (2026-09-18) killed the SD card theory on its own: "latest clip
@@ -392,6 +421,9 @@ camera on the WiFi menu; it says to press Mode and return to the shooting
 screen, since a camera in a menu neither records nor previews.
 
 Proven:
+- CameraBle.kt wakes the camera's WiFi over Bluetooth on the real HERO9
+  and the phone then joins it, 2026-09-21. The GoPro Quik app is not
+  needed for anything.
 - ClipDecoder.kt decodes H.264 and HEVC on the S22 Ultra and the tracker
   runs on its frames: Engine row "ok (H.264 + HEVC, MediaCodec)", 2026-09-17.
 - Apply camera settings puts the HERO9 in 1080p240 Linear, HyperSmooth
@@ -575,6 +607,10 @@ A different key means every user must uninstall.
   once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
+- This camera's WiFi SSID is "HERO9 Black", NOT "GP" plus digits. Never
+  assume the GP prefix: CameraWifi falls back to a GP pattern only when
+  no SSID is known, the scanner badges anything containing "hero" too,
+  and user-facing text must not say "the GP network".
 - Camera WiFi is NOT broadcast until an app asks for it over Bluetooth.
   GoPro's own words: "camera WiFi must be enabled upon each connection via
   BLE." Wireless Connections: On only enables Bluetooth advertising, and

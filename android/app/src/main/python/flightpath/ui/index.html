@@ -761,9 +761,28 @@
       wizRenderCamera(lastState);
       if (statEl) {
         statEl.className = r.camera_ok ? "calibStat" : "calibStat bad";
-        statEl.textContent = r.camera_ok
-          ? "Connected. Now apply the camera settings."
-          : "Still no camera. Check the phone is on the GP… network and not back on 5G.";
+        if (r.camera_ok) {
+          statEl.textContent = "Connected. Now apply the camera settings.";
+        } else {
+          // Say which side is at fault instead of guessing. If the phone
+          // holds a 10.5.5.x address the link is fine and the camera is not
+          // serving, which on this camera means it is sitting in a menu.
+          var link = "";
+          try { link = native.networkInfo() || ""; } catch (e) {}
+          var msg = "Joined the camera's WiFi, but the camera is not answering.";
+          if (link.indexOf("link is good") >= 0) {
+            msg += " The phone is on the camera's network, so the camera itself is not"
+                 + " serving: press the camera's Mode button until it shows its normal"
+                 + " shooting screen (a camera sitting in a menu does not answer), then"
+                 + " tap Connect again.";
+          } else if (link.indexOf("NOT on the camera") >= 0 || link.indexOf("not joined") >= 0) {
+            msg += " The phone is not actually on the camera's network. Tap"
+                 + " “Turn on camera WiFi and connect” again.";
+          }
+          if (r.camera_note) msg += " (" + r.camera_note + ")";
+          if (link) msg += " [" + link + "]";
+          statEl.textContent = msg;
+        }
       }
     }).catch(function () {
       btn.disabled = false; btn.textContent = was;

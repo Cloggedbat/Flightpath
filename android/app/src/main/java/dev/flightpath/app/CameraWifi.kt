@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
 import android.os.PatternMatcher
 import android.util.Log
 
@@ -34,6 +35,59 @@ class CameraWifi(private val context: Context) {
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var boundNetwork: Network? = null
+    private var bound = false
+
+    /**
+     * Which side is at fault when the camera does not answer.
+     *
+     * If this says the phone holds a 10.5.5.x address on the camera's
+     * interface, the link is good and the camera is not serving, which is a
+     * camera-side problem (it is usually sitting in a menu). If there is no
+     * such address, or the process is not bound, the fault is here.
+     */
+    fun linkSummary(): String {
+        val net = boundNetwork ?: return "not joined to any camera network"
+        val parts = mutableListOf("process bound: $bound")
+        try {
+            val lp = cm.getLinkProperties(net)
+            parts.add("interface: " + (lp?.interfaceName ?: "unknown"))
+            val addrs = lp?.linkAddresses?.joinToString(", ") { it.address.hostAddress ?: "?" }
+            parts.add("phone address: " + (if (addrs.isNullOrBlank()) "none" else addrs))
+            parts.add("camera address: " + (cameraHost() ?: "unknown"))
+            val onCameraSubnet = lp?.linkAddresses?.any {
+                it.address.hostAddress?.startsWith("10.5.5.") == true
+            } == true
+            parts.add(if (onCameraSubnet)
+                "on the camera's 10.5.5.x network, so the link is good"
+            else
+                "NOT on the usual 10.5.5.x network")
+        } catch (t: Throwable) {
+            parts.add("link details unavailable: ${t.javaClass.simpleName}")
+        }
+        return parts.joinToString("; ")
+    }
+
+    /**
+     * The camera's own address on this link, or null.
+     *
+     * An access point is the DHCP server and the gateway for the network it
+     * serves, so this is the camera, wherever it decided to put itself. It is
+     * worth asking rather than hardcoding 10.5.5.9: that address is a
+     * convention, and a camera that answers on another one would otherwise
+     * look like a camera that is not there at all.
+     */
+    fun cameraHost(): String? {
+        val net = boundNetwork ?: return null
+        val lp = try { cm.getLinkProperties(net) } catch (_: Throwable) { null } ?: return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            lp.dhcpServerAddress?.hostAddress?.let { return it }
+        }
+        for (r in lp.routes) {
+            val gw = r.gateway?.hostAddress ?: continue
+            if (gw != "0.0.0.0" && gw != "::" && !gw.contains(":")) return gw
+        }
+        return null
+    }
 
     /**
      * @param ssid      exact camera SSID (e.g. "GP12345678"), or null to match any GP* network
@@ -63,6 +117,7 @@ class CameraWifi(private val context: Context) {
             override fun onAvailable(network: Network) {
                 boundNetwork = network
                 val ok = cm.bindProcessToNetwork(network)
+                bound = ok
                 Log.i(TAG, "camera network available, bound=$ok")
                 listener.onConnected(ssid ?: "GoPro")
             }
@@ -127,6 +182,7 @@ class CameraWifi(private val context: Context) {
             try { cm.unregisterNetworkCallback(it) } catch (_: IllegalArgumentException) {}
         }
         callback = null
+        bound = false
         if (boundNetwork != null) {
             cm.bindProcessToNetwork(null)
             boundNetwork = null

@@ -139,6 +139,10 @@ class MainActivity : AppCompatActivity() {
          * not broadcast WiFi until an app asks; this is that request, so the
          * GoPro Quik app is not needed at all.
          */
+        /** Which side is at fault when the camera does not answer. */
+        @JavascriptInterface
+        fun networkInfo(): String = wifi.linkSummary()
+
         @JavascriptInterface
         fun wakeCamera() {
             runOnUiThread {
@@ -287,7 +291,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pyReconnect() {
-        thread { runCatching { Python.getInstance().getModule("android_main").callAttr("reconnect") } }
+        // Tell the engine where the camera actually is before it looks. The
+        // access point is the gateway, so this is the camera's own address,
+        // which beats assuming 10.5.5.9.
+        val host = runCatching { wifi.cameraHost() }.getOrNull()
+        thread {
+            runCatching {
+                val py = Python.getInstance().getModule("android_main")
+                if (!host.isNullOrBlank()) py.callAttr("set_camera_host", host)
+                py.callAttr("reconnect")
+            }
+        }
     }
 
     private fun js(code: String) = runOnUiThread { web.evaluateJavascript(code, null) }

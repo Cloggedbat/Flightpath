@@ -1,5 +1,5 @@
 {
-  "versionCode": 26,
-  "versionName": "0.1.25",
-  "notes": "The app now asks the camera why a recording aborted instead of guessing. A GoPro counts its own SD card write speed errors, card errors, temperature and battery, so the camera test prints a health line before the shutter and again right after, and a stub clip is explained by the camera's own counters. Your last log already ruled the card out: a 6.8 MB clip on the same card, and a stub that is the identical size every time. Run Test camera on 0.1.25 and send the two health lines."
+  "versionCode": 28,
+  "versionName": "0.1.27",
+  "notes": "The app no longer assumes the camera is at 10.5.5.9. It now reads the camera's real address off the WiFi link it just joined and talks to it there, which fixes the case where the WiFi connects fine but the camera seems absent. The connection line also prints the phone's address and the camera's address, so if it still fails we can see exactly where each end is."
 }
