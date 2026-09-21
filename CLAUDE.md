@@ -49,7 +49,30 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.24, versionCode 25.
+App version 0.1.25, versionCode 26.
+
+0.1.25 asks the camera why a recording aborted instead of guessing. The
+19:11 log (2026-09-18) killed the SD card theory on its own: "latest clip
+on the card before the shutter: GX010553.MP4 (6.8 MB)", so the camera
+does write real clips, and the stub is 27,639 bytes EXACTLY every time
+(GX010551, GX010554), which a failing card would never produce. The
+camera keeps its own counters, so now the app reads them. Status ids,
+from GoPro's SDK (open_gopro/api/ble_statuses.py, whose doc links carry
+the id in the anchor): 1 battery present, 2 battery bars, 6 overheating,
+8 BUSY, 10 ENCODING, 13 encoding duration, 35 remaining video seconds,
+54 card free KB, 70 battery percent, 111 SD CARD WRITE SPEED ERROR, 112
+SD card errors, 117 card capacity. GoProClient.health() reads them and
+health_line() prints one line; the camera test prints it before the
+shutter and again the instant the 3 s window ends, and _stub_reason()
+names the actual cause (card too slow, card errors, overheating, flat
+battery) or, when the camera reports nothing wrong, says so and points
+at the app's own shutter. That last branch is the likely one here.
+
+Real bug found on the way: is_recording() read status 8, which is BUSY,
+not ENCODING (10). It now reads 10, and the stop loop waits on a new
+is_idle() (neither encoding nor busy), which is what it always meant.
+The fake serves all these statuses; the harness has a camera health
+scenario (51 checks total).
 
 0.1.24 removes the GoPro app from the loop. CameraBle.kt sends the
 Bluetooth request that makes a HERO9 switch its WiFi on, so Quik is not
@@ -514,11 +537,20 @@ A different key means every user must uninstall.
   TsUdpDataSource.kt finds the first 0x47 that repeats 188 bytes later
   and serves from there; the camera test reports the offset it found.
 - On the app's shutter the camera has been closing recordings almost at
-  once: GX010551.MP4 was 27,639 bytes for a 3 s window, agreed by the
-  media list and the download server for 25 s (2026-09-18). A file under
-  MIN_CLIP_BYTES is a stub, not a lag. Likely causes: SD card too slow
-  for 1080p240 HEVC, low battery, overheating; the camera's screen shows
-  which. Not yet known whether the camera's own button records normally.
+  once: 27,639 bytes for a 3 s window, the SAME size every time
+  (GX010551, GX010554), agreed by the media list and the download server
+  for 25 s (2026-09-18). A file under MIN_CLIP_BYTES is a stub, not a
+  lag. A failing card gives varying sizes, and GX010553.MP4 on the same
+  card is 6.8 MB, so the camera does record. Ask the camera rather than
+  guess: statuses 111 (card write speed errors), 112 (card errors), 6
+  (overheating) and 70 (battery) via GoProClient.health(). Still not
+  known whether the camera's own shutter button records normally; the
+  camera test's "latest clip on the card" line answers that.
+- Camera status ids that matter: 6 overheating, 8 BUSY, 10 ENCODING, 13
+  encoding duration in seconds, 54 card free KB, 70 battery percent, 111
+  card write speed errors, 112 card errors. 8 is busy, NOT recording; it
+  stays set for the whole twenty seconds the camera spends closing a
+  file. Read 10 for encoding and wait on both for idle.
 - The media list can also lag the file right after idle (0 bytes one
   second after idle). Never trust the list's size for a fresh clip. Ask the download server (a one byte ranged
   GET; GoProClient.clip_size reads Content-Range), require MIN_CLIP_BYTES,

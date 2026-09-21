@@ -38,8 +38,15 @@ class FakeHero9:
     def __init__(self, clip_path: str, *, start_delay_s: float = 2.5,
                  finalize_s: float = 2.0, size_settle_s: float = 1.5,
                  list_lag_s: float = 4.0, range_support: bool = True,
-                 stub_clips: bool = False,
+                 stub_clips: bool = False, write_speed_errors: int = 0,
+                 sd_errors: int = 0, overheating: bool = False,
+                 battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
                  udp_datagrams: int = 500, udp_header: bytes = b""):
+        self.write_speed_errors = write_speed_errors
+        self.sd_errors = sd_errors
+        self.overheating = overheating
+        self.battery_pct = battery_pct
+        self.sd_remaining_kb = sd_remaining_kb
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
         # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
@@ -132,8 +139,27 @@ class FakeHero9:
         return status, json.dumps(obj).encode(), "application/json", {}
 
     def _state(self) -> dict:
-        return {"status": {"8": 1 if self._recording() else 0, "10": 0},
-                "settings": dict(self.settings)}
+        """Status ids as GoPro documents them: 8 busy, 10 encoding, 13 the
+        duration so far, 111 card write speed errors, 6 overheating. Busy
+        stays set through finalisation, which is the whole reason the stop
+        loop waits on idle rather than on encoding."""
+        now = time.monotonic()
+        rec = self._recording()
+        finalising = not rec and now < self.dead_until
+        return {"status": {
+            "1": 1,
+            "2": 4,
+            "6": 1 if self.overheating else 0,
+            "8": 1 if (rec or finalising) else 0,
+            "10": 1 if rec else 0,
+            "13": int(now - self.recording_since) if rec else 0,
+            "35": 1800,
+            "54": self.sd_remaining_kb,
+            "70": self.battery_pct,
+            "111": self.write_speed_errors,
+            "112": self.sd_errors,
+            "117": 1,
+        }, "settings": dict(self.settings)}
 
     def _listed_size(self, f: dict, now: float) -> int:
         """What the media list says, which lags the file: 0 while the camera

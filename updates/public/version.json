@@ -1,5 +1,5 @@
 {
-  "versionCode": 25,
-  "versionName": "0.1.24",
-  "notes": "The GoPro Quik app is no longer needed. A HERO9 keeps its WiFi switched off until an app asks over Bluetooth, and FlightPath now sends that request itself using GoPro's own published protocol. The Camera step is one button: Turn on camera WiFi and connect. It wakes the camera, reads its network name and password off the camera, and joins it. The first time, put the camera on Preferences, Connections, Connect Device, GoPro App so it pairs with the phone, and accept the pairing request; after that just leave the camera on its shooting screen."
+  "versionCode": 26,
+  "versionName": "0.1.25",
+  "notes": "The app now asks the camera why a recording aborted instead of guessing. A GoPro counts its own SD card write speed errors, card errors, temperature and battery, so the camera test prints a health line before the shutter and again right after, and a stub clip is explained by the camera's own counters. Your last log already ruled the card out: a 6.8 MB clip on the same card, and a stub that is the identical size every time. Run Test camera on 0.1.25 and send the two health lines."
 }

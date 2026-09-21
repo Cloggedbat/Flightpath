@@ -36,10 +36,6 @@ from .session import Session, Shot
 # the media list and the download server agreed on that size for 25 s.
 MIN_CLIP_BYTES = 256 * 1024
 
-STUB_HINT = ("the camera stopped recording almost at once and wrote only {kb} KB. "
-             "Look at its screen for an SD card, battery or temperature warning. "
-             "Then record a few seconds with the camera's own shutter button and "
-             "run Test camera: its 'latest clip' line says whether that one is real.")
 
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
 
@@ -261,7 +257,9 @@ class Worker:
                 err = str(exc)
             time.sleep(0.7)
             try:
-                if self.client.is_recording() is False:
+                # Idle, not "not encoding": this camera keeps the busy flag
+                # set for the whole twenty seconds it spends closing a file.
+                if self.client.is_idle() is True:
                     return True, err
             except Exception:                              # noqa: BLE001
                 pass                                       # state still recovering
@@ -272,6 +270,35 @@ class Worker:
     # How long a tiny clip must sit unchanged before the poll loop calls it
     # a stub. The measured stub held its size for the full 25 s.
     STUB_AFTER_S = 20.0
+
+    @staticmethod
+    def _stub_reason(size_bytes: int, health: dict | None) -> str:
+        """Why a recording aborted, preferring the camera's own counters over
+        the three-way guess."""
+        kb = size_bytes // 1024
+        h = health or {}
+        if h.get("sd_write_speed_error"):
+            return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
+                    f"and it reports {h['sd_write_speed_error']} SD card write speed "
+                    "errors. The card cannot keep up with 1080p240. Use a V30 card, or "
+                    "drop to 1080p120 in the camera.")
+        if h.get("sd_errors"):
+            return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
+                    f"and it reports {h['sd_errors']} SD card errors. Format the card in "
+                    "the camera (Preferences, Reset, Format SD Card) after copying "
+                    "anything you want off it.")
+        if h.get("overheating"):
+            return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
+                    "and it reports that it is overheating. Let it cool down.")
+        pct = h.get("battery_pct")
+        if isinstance(pct, int) and pct <= 15:
+            return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
+                    f"and its battery is at {pct}%. Charge it and try again.")
+        return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
+                "and it reports no card, battery or temperature problem. Record a few "
+                "seconds with the camera's own shutter button, then run Test camera: "
+                "the 'latest clip' line says whether the camera records normally on "
+                "its own, which would put the fault in how this app fires the shutter.")
 
     def _stub_after(self, before: set[str]):
         """A new main video that exists but never grew past MIN_CLIP_BYTES,
@@ -439,8 +466,10 @@ class Worker:
                 if stub is not None:
                     # A file exists, so the shutter fired; the camera itself
                     # gave up on the recording. Not a menu-screen problem.
+                    # Ask the camera why before blaming anything.
                     self.seen.add(stub.path)
-                    stage("failed", f"{stub.name}: " + STUB_HINT.format(kb=stub.size // 1024))
+                    stage("failed", f"{stub.name}: "
+                          + self._stub_reason(stub.size, self.client.health()))
                 elif unconfirmed:
                     stage("failed", "no new clip appeared and the camera never "
                                     "confirmed it stopped. If its red light is on, "
@@ -657,6 +686,11 @@ class Worker:
                             size = served if served is not None else last.size
                             self._note(f"latest clip on the card before the shutter: "
                                        f"{last.name} ({size / 1048576:.1f} MB)")
+                        # What the camera says about itself, before it is
+                        # asked to do anything. A recording that aborts
+                        # leaves no explanation anywhere else, and the
+                        # camera counts its own card write speed errors.
+                        self._note(gopro.GoProClient.health_line(self.client.health()))
                     except Exception as exc:               # noqa: BLE001
                         self._note(f"media list before: {type(exc).__name__}: {exc}")
                     try:
@@ -671,6 +705,12 @@ class Worker:
                     # six of them once turned this 3 s test into a 32 s clip.
                     time.sleep(3.0)
                     self._note("  recorded 3.0 s (state is unreadable while recording, not polled)")
+                    # One health read the instant the window ends. If the
+                    # camera aborted the recording, its own counters say why,
+                    # and status 13 says how many seconds it actually got.
+                    after_health = self.client.health()
+                    self._note("after the window, " +
+                               gopro.GoProClient.health_line(after_health))
                     # Stop, and keep sending stop until state reports a clean
                     # idle, exactly as trigger() does. None means state is
                     # still recovering; only a real False proves it stopped.
@@ -705,7 +745,7 @@ class Worker:
                             self._note(f"new clip: {stub.path} is only {stub.size // 1024} KB "
                                        f"after {self.CLIP_SETTLE_S:.0f} s")
                             verdict_shutter = (f"STUB CLIP, {stub.size // 1024} KB: "
-                                               + STUB_HINT.format(kb=stub.size // 1024))
+                                               + self._stub_reason(stub.size, after_health))
                         else:
                             self._note(f"new clip: none within {self.CLIP_SETTLE_S:.0f} s")
                             verdict_shutter = "NO CLIP (camera on a menu screen? press Mode)"
@@ -993,9 +1033,10 @@ class Worker:
                 # show the same size twice.
                 self.seen.add(i.path)
                 self._pending_size.pop(i.path, None)
-                self._note(f"{i.name}: " + STUB_HINT.format(kb=size // 1024))
+                why = f"{i.name}: " + self._stub_reason(size, self.client.health())
+                self._note(why)
                 with self._lock:
-                    self.last_error = f"{i.name}: " + STUB_HINT.format(kb=size // 1024)
+                    self.last_error = why
         fresh = settled
 
         if self.settings.mode == "focus":

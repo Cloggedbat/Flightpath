@@ -69,6 +69,23 @@ HYPERSMOOTH_OFF = 0
 
 PRESET_GROUP_VIDEO = 1000
 
+# Camera status ids, taken from GoPro's own SDK (open_gopro/api/ble_statuses.py,
+# whose doc links carry the id in the anchor). Worth having exactly right: the
+# client read status 8 as "recording" for a long time, and 8 is BUSY. Encoding
+# is 10. The two differ for the whole time the camera is closing a file.
+STATUS_BATTERY_PRESENT = 1
+STATUS_BATTERY_BARS = 2
+STATUS_OVERHEATING = 6
+STATUS_BUSY = 8
+STATUS_ENCODING = 10
+STATUS_ENCODING_DURATION = 13          # seconds of the clip being recorded
+STATUS_REMAINING_VIDEO_S = 35
+STATUS_SD_REMAINING_KB = 54
+STATUS_BATTERY_PCT = 70
+STATUS_SD_WRITE_SPEED_ERROR = 111      # card too slow for the chosen mode
+STATUS_SD_ERRORS = 112
+STATUS_SD_CAPACITY = 117
+
 # Human names for what the camera reports, so the UI can say "1080p" not "9".
 RES_NAMES = {1: "4K", 4: "2.7K", 6: "2.7K 4:3", 7: "1440p", 9: "1080p",
              18: "4K 4:3", 24: "5K", 25: "5K 4:3", 27: "5.3K"}
@@ -289,17 +306,108 @@ class GoProClient:
         except Exception:                                  # noqa: BLE001
             pass
 
+    @staticmethod
+    def _status(state: dict, sid: int):
+        """One status value, or None. The camera keys these as strings over
+        HTTP and as ints over BLE, so accept both."""
+        status = state.get("status", {})
+        for key in (str(sid), sid):
+            if key in status:
+                return status[key]
+        return None
+
     def is_recording(self) -> bool | None:
-        """None when the state shape is not recognised, rather than a wrong False."""
+        """Is the camera encoding right now? None when it cannot be read.
+
+        Status 10, not 8. Status 8 is "busy", which stays set for the whole
+        twenty seconds this camera spends closing a file after a recording.
+        """
         try:
             st = self.state()
         except Exception:                                  # noqa: BLE001
             return None
-        status = st.get("status", {})
-        for key in ("8", 8, "encoding"):
-            if key in status:
-                return bool(status[key])
-        return None
+        v = self._status(st, STATUS_ENCODING)
+        if v is None:
+            v = self._status(st, STATUS_BUSY)              # older shape
+        return None if v is None else bool(v)
+
+    def is_idle(self) -> bool | None:
+        """Neither encoding nor busy: the camera has finished with the file.
+
+        This, not is_recording(), is what proves a recording ended. The stop
+        loop waits for it.
+        """
+        try:
+            st = self.state()
+        except Exception:                                  # noqa: BLE001
+            return None
+        enc = self._status(st, STATUS_ENCODING)
+        busy = self._status(st, STATUS_BUSY)
+        if enc is None and busy is None:
+            return None
+        return not bool(enc or 0) and not bool(busy or 0)
+
+    def health(self) -> dict:
+        """What the camera says about itself.
+
+        This exists because a recording that aborts leaves a stub clip and no
+        explanation anywhere else. The camera counts its own SD card write
+        speed errors; asking beats guessing between card, battery and heat.
+        """
+        try:
+            st = self.state()
+        except Exception as exc:                           # noqa: BLE001
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        g = lambda sid: self._status(st, sid)              # noqa: E731
+        kb = g(STATUS_SD_REMAINING_KB)
+        return {
+            "battery_pct": g(STATUS_BATTERY_PCT),
+            "battery_bars": g(STATUS_BATTERY_BARS),
+            "overheating": g(STATUS_OVERHEATING),
+            "busy": g(STATUS_BUSY),
+            "encoding": g(STATUS_ENCODING),
+            "encoding_s": g(STATUS_ENCODING_DURATION),
+            "sd_write_speed_error": g(STATUS_SD_WRITE_SPEED_ERROR),
+            "sd_errors": g(STATUS_SD_ERRORS),
+            "sd_remaining_mb": None if kb is None else int(kb) // 1024,
+            "remaining_video_s": g(STATUS_REMAINING_VIDEO_S),
+        }
+
+    @staticmethod
+    def health_line(h: dict) -> str:
+        """One readable line for the wizard's log."""
+        if h.get("error"):
+            return f"camera health: unreadable ({h['error']})"
+        bits = []
+        if h.get("battery_pct") is not None:
+            bits.append(f"battery {h['battery_pct']}%")
+        elif h.get("battery_bars") is not None:
+            bits.append(f"battery {h['battery_bars']}/4 bars")
+        if h.get("sd_remaining_mb") is not None:
+            bits.append(f"card {h['sd_remaining_mb']} MB free")
+        if h.get("remaining_video_s") is not None:
+            bits.append(f"{h['remaining_video_s']} s of video left")
+        warn = []
+        if h.get("overheating"):
+            warn.append("OVERHEATING")
+        if h.get("sd_write_speed_error"):
+            warn.append(f"SD CARD TOO SLOW (write speed errors: {h['sd_write_speed_error']})")
+        if h.get("sd_errors"):
+            warn.append(f"SD CARD ERRORS: {h['sd_errors']}")
+        state = []
+        if h.get("encoding"):
+            secs = h.get("encoding_s")
+            state.append("encoding" + (f" {secs} s" if secs else ""))
+        if h.get("busy"):
+            state.append("busy")
+        line = "camera health: " + (", ".join(bits) if bits else "no readings")
+        if state:
+            line += "; " + ", ".join(state)
+        if warn:
+            line += "; " + "; ".join(warn)
+        else:
+            line += "; no card, battery or temperature warning"
+        return line
 
     def set_setting(self, setting_id: int, option: int) -> None:
         self._get(f"/gopro/camera/setting?setting={setting_id}&option={option}")

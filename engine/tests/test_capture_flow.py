@@ -172,6 +172,7 @@ def main() -> int:
         cam.stop()
 
     stub_scenario(clip)
+    health_scenario(clip)
 
     print()
     if fails:
@@ -179,6 +180,49 @@ def main() -> int:
         return 1
     print("all checks passed")
     return 0
+
+
+def health_scenario(clip: str) -> None:
+    """When the camera counts its own SD card write speed errors, the app must
+    name the card rather than offer the three-way guess."""
+    print("--- camera health ---", flush=True)
+    tmp = tempfile.mkdtemp(prefix="fp_health_")
+    cam = FakeHero9(clip, stub_clips=True, list_lag_s=0.0,
+                    write_speed_errors=7, battery_pct=64).start()
+    client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
+    w = Worker(Settings(clip_dir=os.path.join(tmp, "clips"),
+                        session_path=os.path.join(tmp, "session.json"),
+                        config_path=os.path.join(tmp, "config.json"),
+                        poll_seconds=0.5), client)
+    w.CLIP_SETTLE_S = 5.0
+    try:
+        w._connect()
+        h = client.health()
+        check("health: reads the write speed error count", h["sd_write_speed_error"] == 7, str(h))
+        check("health: reads the battery", h["battery_pct"] == 64, str(h["battery_pct"]))
+        check("health: card free space in MB", h["sd_remaining_mb"] == 51200, str(h["sd_remaining_mb"]))
+        line = gopro.GoProClient.health_line(h)
+        check("health line warns about the card", "SD CARD TOO SLOW" in line, line)
+
+        w.capture_reference_frame(seconds=0.5)
+        check("health: capture blames the card, not a guess",
+              "cannot keep up with 1080p240" in w.calib_message, w.calib_message)
+        check("health: capture suggests V30 or 1080p120",
+              "V30" in w.calib_message and "1080p120" in w.calib_message, w.calib_message)
+
+        # The other causes, on the reason builder itself.
+        r = Worker._stub_reason(27_639, {"overheating": 1})
+        check("health: overheating is named", "overheating" in r, r)
+        r = Worker._stub_reason(27_639, {"sd_errors": 3})
+        check("health: card errors suggest a format", "Format the card" in r, r)
+        r = Worker._stub_reason(27_639, {"battery_pct": 9})
+        check("health: a flat battery is named", "battery is at 9%" in r, r)
+        r = Worker._stub_reason(27_639, {"sd_write_speed_error": 0, "battery_pct": 80})
+        check("health: a healthy camera points at the app's shutter",
+              "how this app fires the shutter" in r, r)
+    finally:
+        w.stop()
+        cam.stop()
 
 
 def stub_scenario(clip: str) -> None:
