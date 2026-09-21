@@ -49,7 +49,24 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.28, versionCode 29.
+App version 0.1.29, versionCode 30.
+
+0.1.29: the 0.1.28 retry did not help. The bind is refused outright, 20
+times over 5 s, on a perfect link (11:17, 2026-09-21). AJ's status bar
+in that screenshot shows Android's VPN key icon. A VPN owns the
+process's default network and pulls every socket into its tunnel, which
+is exactly why bindProcessToNetwork keeps failing and why the engine's
+requests never reach 10.5.5.9. CameraWifi.vpnActive() now checks every
+network for TRANSPORT_VPN, the link summary says "A VPN IS RUNNING",
+and the wizard tells the user to turn it off first. Not yet confirmed on
+the phone that turning the VPN off fixes it.
+
+If it does not, the real fix is to stop depending on the process default
+network: route the engine's camera HTTP through Network.openConnection()
+in Kotlin, which binds per connection and ignores both the process
+binding and any VPN. GoProClient._get() is the single choke point for
+every camera request, plus download() for clips, so it is a contained
+change: a CameraHttp.kt helper and a native-fetcher hook in gopro.py.
 
 0.1.28 fixes the real cause of "camera not answering", found by the
 0.1.27 diagnostic on the first run (09:01, 2026-09-21):
@@ -627,6 +644,10 @@ A different key means every user must uninstall.
   once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
+- A VPN on the phone breaks the camera link completely. It owns the
+  process's default network, so bindProcessToNetwork to the camera's WiFi
+  is refused and every request goes into the tunnel instead. Check
+  CameraWifi.vpnActive() before blaming anything else.
 - Joining the camera's WiFi is not enough: the process must be BOUND to
   that network or Android sends every socket to cellular and the camera
   looks absent. bindProcessToNetwork can return false while the link is

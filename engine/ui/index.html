@@ -770,7 +770,13 @@
           var link = "";
           try { link = native.networkInfo() || ""; } catch (e) {}
           var msg = "Joined the camera's WiFi, but the camera is not answering.";
-          if (link.indexOf("process bound: false") >= 0) {
+          if (link.indexOf("A VPN IS RUNNING") >= 0) {
+            // A VPN owns the process's default network, so the app cannot be
+            // routed to the camera at all while it is up.
+            msg += " A VPN is running on this phone, and a VPN takes over all of the"
+                 + " app’s traffic, so it can never reach the camera. Turn the VPN off"
+                 + " and tap “Turn on camera WiFi and connect” again.";
+          } else if (link.indexOf("process bound: false") >= 0) {
             // The link exists but this app is not routed down it, so every
             // request went to 5G instead of the camera.
             msg += " The app is not routed through the camera's WiFi yet, so its requests"

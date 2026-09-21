@@ -91,9 +91,31 @@ class CameraWifi(private val context: Context) {
      * camera-side problem (it is usually sitting in a menu). If there is no
      * such address, or the process is not bound, the fault is here.
      */
+    /**
+     * Is a VPN up? It matters more than it looks.
+     *
+     * A VPN takes over the process's default network and routes everything
+     * into its tunnel, which makes bindProcessToNetwork to the camera's WiFi
+     * fail and sends the engine's requests anywhere but the camera. Seen on
+     * the S22 (2026-09-21): a perfect link, 10.5.5.100 to 10.5.5.9, and the
+     * bind refused twenty times in a row with a VPN running.
+     */
+    fun vpnActive(): Boolean {
+        return try {
+            cm.allNetworks.any { n ->
+                cm.getNetworkCapabilities(n)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     fun linkSummary(): String {
-        val net = boundNetwork ?: return "not joined to any camera network"
+        val net = boundNetwork ?: return "not joined to any camera network" +
+            (if (vpnActive()) "; A VPN IS RUNNING, which blocks this" else "")
         val parts = mutableListOf("process bound: $bound")
+        if (vpnActive()) parts.add("A VPN IS RUNNING")
         try {
             val lp = cm.getLinkProperties(net)
             parts.add("interface: " + (lp?.interfaceName ?: "unknown"))
