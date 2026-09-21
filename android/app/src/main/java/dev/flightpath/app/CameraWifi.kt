@@ -7,6 +7,8 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PatternMatcher
 import android.util.Log
 
@@ -36,6 +38,50 @@ class CameraWifi(private val context: Context) {
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var boundNetwork: Network? = null
     private var bound = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Route this process down the camera link, retrying until it takes.
+     *
+     * bindProcessToNetwork can return false while the link is still being
+     * set up, and a single silent false is fatal in a way that looks like a
+     * missing camera: Android sends every unbound socket to the default
+     * network, so the engine's requests go out over cellular and the camera
+     * is never contacted, even though the phone holds an address on its
+     * network. Measured on the S22: phone 10.5.5.100, camera 10.5.5.9, link
+     * good, bound false. So keep asking.
+     */
+    private fun bindWithRetries(network: Network, ssid: String, listener: Listener) {
+        var attempt = 0
+        fun tryBind() {
+            attempt++
+            val ok = try { cm.bindProcessToNetwork(network) } catch (_: Throwable) { false }
+            if (ok) {
+                bound = true
+                Log.i(TAG, "bound to the camera network after $attempt attempt(s)")
+                listener.onConnected(ssid)
+                return
+            }
+            if (attempt >= BIND_ATTEMPTS || boundNetwork != network) {
+                bound = false
+                Log.w(TAG, "could not bind to the camera network after $attempt attempts")
+                // Still report connected: the link exists, and the wizard's
+                // diagnostic line says the bind failed rather than hiding it.
+                listener.onConnected(ssid)
+                return
+            }
+            handler.postDelayed({ tryBind() }, BIND_RETRY_MS)
+        }
+        tryBind()
+    }
+
+    /** Re-run the bind on demand, for a retry button or a later reconnect. */
+    fun rebind(): Boolean {
+        val net = boundNetwork ?: return false
+        val ok = try { cm.bindProcessToNetwork(net) } catch (_: Throwable) { false }
+        bound = ok
+        return ok
+    }
 
     /**
      * Which side is at fault when the camera does not answer.
@@ -116,10 +162,18 @@ class CameraWifi(private val context: Context) {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 boundNetwork = network
-                val ok = cm.bindProcessToNetwork(network)
-                bound = ok
-                Log.i(TAG, "camera network available, bound=$ok")
-                listener.onConnected(ssid ?: "GoPro")
+                bindWithRetries(network, ssid ?: "GoPro", listener)
+            }
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                // The bind can be refused while the link is still being set
+                // up. Capabilities arriving is the signal that it is ready.
+                if (!bound && network == boundNetwork) {
+                    if (cm.bindProcessToNetwork(network)) {
+                        bound = true
+                        Log.i(TAG, "bound on capabilities change")
+                    }
+                }
             }
 
             override fun onUnavailable() {
@@ -161,9 +215,7 @@ class CameraWifi(private val context: Context) {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 boundNetwork = network
-                val ok = cm.bindProcessToNetwork(network)
-                Log.i(TAG, "bound to current wifi, ok=$ok")
-                listener.onConnected("current WiFi")
+                bindWithRetries(network, "current WiFi", listener)
             }
             override fun onUnavailable() {
                 listener.onUnavailable("The phone is not on any WiFi. Join the camera's network in Android WiFi settings first.")
@@ -193,5 +245,9 @@ class CameraWifi(private val context: Context) {
 
     companion object {
         private const val TAG = "FlightPath.Wifi"
+        // Five seconds of asking. The bind has been seen to fail outright on
+        // the first call while the link was still coming up.
+        private const val BIND_ATTEMPTS = 20
+        private const val BIND_RETRY_MS = 250L
     }
 }

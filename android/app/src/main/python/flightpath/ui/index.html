@@ -770,12 +770,16 @@
           var link = "";
           try { link = native.networkInfo() || ""; } catch (e) {}
           var msg = "Joined the camera's WiFi, but the camera is not answering.";
-          if (link.indexOf("link is good") >= 0) {
-            msg += " The phone is on the camera's network, so the camera itself is not"
-                 + " serving: press the camera's Mode button until it shows its normal"
-                 + " shooting screen (a camera sitting in a menu does not answer), then"
-                 + " tap Connect again.";
-          } else if (link.indexOf("NOT on the camera") >= 0 || link.indexOf("not joined") >= 0) {
+          if (link.indexOf("process bound: false") >= 0) {
+            // The link exists but this app is not routed down it, so every
+            // request went to 5G instead of the camera.
+            msg += " The app is not routed through the camera's WiFi yet, so its requests"
+                 + " went out over 5G. Tap “Turn on camera WiFi and connect” again.";
+          } else if (link.indexOf("link is good") >= 0) {
+            msg += " The phone is on the camera's network and routed through it, so the"
+                 + " camera itself is not serving: press the camera's Mode button until it"
+                 + " shows its normal shooting screen, then tap Connect again.";
+          } else if (link.indexOf("NOT on the") >= 0 || link.indexOf("not joined") >= 0) {
             msg += " The phone is not actually on the camera's network. Tap"
                  + " “Turn on camera WiFi and connect” again.";
           }

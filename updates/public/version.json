@@ -1,5 +1,5 @@
 {
-  "versionCode": 28,
-  "versionName": "0.1.27",
-  "notes": "The app no longer assumes the camera is at 10.5.5.9. It now reads the camera's real address off the WiFi link it just joined and talks to it there, which fixes the case where the WiFi connects fine but the camera seems absent. The connection line also prints the phone's address and the camera's address, so if it still fails we can see exactly where each end is."
+  "versionCode": 29,
+  "versionName": "0.1.28",
+  "notes": "This is the one. Your last screen showed the phone on 10.5.5.100 and the camera on 10.5.5.9 with a good link, but 'process bound: false': the app had joined the camera's WiFi and then sent all its requests out over 5G anyway, so the camera was never actually contacted. That is why it looked absent no matter what the camera was doing. The app now keeps asking Android to route it through the camera until it takes, and re-checks before every connect. Update, tap the green button, and it should say Connected."
 }

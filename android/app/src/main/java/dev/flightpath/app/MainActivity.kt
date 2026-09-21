@@ -294,6 +294,10 @@ class MainActivity : AppCompatActivity() {
         // Tell the engine where the camera actually is before it looks. The
         // access point is the gateway, so this is the camera's own address,
         // which beats assuming 10.5.5.9.
+        // Make sure this process is still routed down the camera link. An
+        // unbound process sends every request to the default network, which
+        // is cellular, and the camera then looks absent.
+        runCatching { wifi.rebind() }
         val host = runCatching { wifi.cameraHost() }.getOrNull()
         thread {
             runCatching {

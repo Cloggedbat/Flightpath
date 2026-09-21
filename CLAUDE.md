@@ -49,7 +49,27 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.27, versionCode 28.
+App version 0.1.28, versionCode 29.
+
+0.1.28 fixes the real cause of "camera not answering", found by the
+0.1.27 diagnostic on the first run (09:01, 2026-09-21):
+
+  process bound: false; interface: wlan0;
+  phone address: fe80::..., 10.5.5.100; camera address: 10.5.5.9;
+  on the camera's 10.5.5.x network, so the link is good
+
+The phone held 10.5.5.100, the camera was at 10.5.5.9, the WiFi link was
+perfect, and bindProcessToNetwork had returned FALSE. Android routes every
+unbound socket to the default network, so the engine's requests went out
+over cellular and the camera was never contacted. It looked exactly like
+an absent camera, and cost days: the flapping, the menu theory and the
+"press Mode" advice were all downstream of this. The bind is now retried
+up to 20 times over 5 s and again on onCapabilitiesChanged, rebind() runs
+before every reconnect, and the wizard names an unbound process instead
+of blaming the camera. bindCurrentWifi uses the same retry.
+
+Lesson worth keeping: bindProcessToNetwork returns a Boolean and a single
+silent false is fatal. Never ignore it, and surface it in the UI.
 
 0.1.27 stops assuming the camera lives at 10.5.5.9. With the camera on
 its normal shooting screen the engine still could not reach it after a
@@ -607,6 +627,12 @@ A different key means every user must uninstall.
   once on 409.
 - Preview is fixed low-res, so clips must be transferred for analysis:
   10 to 20 s per shot over WiFi. That latency is a known limit.
+- Joining the camera's WiFi is not enough: the process must be BOUND to
+  that network or Android sends every socket to cellular and the camera
+  looks absent. bindProcessToNetwork can return false while the link is
+  still coming up, and it did on the S22 with a perfectly good link
+  (10.5.5.100 to 10.5.5.9). Retry it, rebind before each reconnect, and
+  never drop the Boolean it returns.
 - This camera's WiFi SSID is "HERO9 Black", NOT "GP" plus digits. Never
   assume the GP prefix: CameraWifi falls back to a GP pattern only when
   no SSID is known, the scanner badges anything containing "hero" too,
