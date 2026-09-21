@@ -49,7 +49,34 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.29, versionCode 30.
+App version 0.1.30, versionCode 31.
+
+0.1.30: IT WAS THE VPN. With it off the camera connects and the whole
+test runs (12:38, 2026-09-21). That closes a bug that cost days and sent
+us through the SD card, the menu screen, Quik, the pairing mode and the
+bind retry, all downstream of a VPN quietly owning the process's default
+network. Check vpnActive() early, always.
+
+The same run finally settled the stub question with the camera's own
+words:
+
+  latest clip on the card before the shutter: GX010555.MP4 (58.6 MB)
+  camera health: battery 30%, card 121438 MB free, 15103 s of video
+                 left; no card, battery or temperature warning
+
+So the camera and the card record 58.6 MB clips perfectly well, there
+is 118 GB free, and nothing is too slow, too flat or too hot. The card
+theory is dead. The app's own shutter still writes exactly 27,639 bytes,
+so the fault is in how this app fires the shutter, which is what
+_stub_reason's last branch said.
+
+New: flightpath/mp4probe.py, a stdlib MP4 box parser. The camera test
+now downloads the stub (26 KB, trivial) and prints what is inside it:
+top-level boxes, duration from mvhd, and per track the handler type,
+codec and sample count from stsz. That distinguishes a file with no
+moov (never finalised) from a finalised file whose video track has zero
+frames, which mean completely different things and cannot be told apart
+by guessing. Harness: 52 checks.
 
 0.1.29: the 0.1.28 retry did not help. The bind is refused outright, 20
 times over 5 s, on a perfect link (11:17, 2026-09-21). AJ's status bar
@@ -458,6 +485,12 @@ camera on the WiFi menu; it says to press Mode and return to the shooting
 screen, since a camera in a menu neither records nor previews.
 
 Proven:
+- The camera and its SD card record normally: GX010555.MP4 is 58.6 MB,
+  118 GB free, and the camera reports no card, battery or temperature
+  problem (2026-09-21). Any stub clip is the app's shutter, not hardware.
+- The whole camera link works once no VPN is running: Bluetooth wake,
+  WiFi join, process bind, probe, settings, shutter, media list and the
+  preview stream all in one test run (2026-09-21).
 - CameraBle.kt wakes the camera's WiFi over Bluetooth on the real HERO9
   and the phone then joins it, 2026-09-21. The GoPro Quik app is not
   needed for anything.

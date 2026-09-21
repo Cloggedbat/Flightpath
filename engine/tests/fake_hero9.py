@@ -234,8 +234,11 @@ class FakeHero9:
                 name = path.rsplit("/", 1)[-1]
                 for f in self.files:
                     if f["n"] == name:
-                        if f["n"].endswith(".MP4") and f["size"] == len(self.clip_bytes):
-                            body = self.clip_bytes[:self._served_size(f, now)]
+                        if f["n"].endswith(".MP4"):
+                            # A stub is a real clip cut short, which is what
+                            # a recording that aborts leaves behind.
+                            want = min(self._served_size(f, now), len(self.clip_bytes))
+                            body = self.clip_bytes[:want]
                         else:
                             body = b"\x00" * f["size"]
                         if range_header and self.range_support:

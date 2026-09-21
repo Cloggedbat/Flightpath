@@ -27,7 +27,7 @@ import json
 
 import cv2
 
-from . import calibrate, cameras, detect, gopro, lens, nativecap
+from . import calibrate, cameras, detect, gopro, lens, mp4probe, nativecap
 from .session import Session, Shot
 
 # Below this a "clip" is a file the camera closed almost as soon as it opened
@@ -744,6 +744,15 @@ class Worker:
                             self.seen.add(stub.path)
                             self._note(f"new clip: {stub.path} is only {stub.size // 1024} KB "
                                        f"after {self.CLIP_SETTLE_S:.0f} s")
+                            # Small enough to fetch, and the container says
+                            # whether the camera wrote any video frames at
+                            # all, which no amount of guessing can.
+                            try:
+                                p = self.client.download(stub, self.settings.clip_dir)
+                                self._note(mp4probe.summary(mp4probe.probe(p)))
+                            except Exception as exc:               # noqa: BLE001
+                                self._note("could not fetch the stub to look inside it: "
+                                           f"{type(exc).__name__}: {exc}")
                             verdict_shutter = (f"STUB CLIP, {stub.size // 1024} KB: "
                                                + self._stub_reason(stub.size, after_health))
                         else:

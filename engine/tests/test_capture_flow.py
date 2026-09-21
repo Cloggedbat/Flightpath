@@ -261,6 +261,9 @@ def stub_scenario(clip: str) -> None:
               bool(verdict) and "STUB CLIP, 26 KB" in verdict[0], verdict[0] if verdict else "")
         check("stub: verdict does not say press Mode",
               bool(verdict) and "press Mode" not in verdict[0])
+        check("stub: the clip's contents are reported",
+              any("clip contents:" in l for l in log),
+              next((l for l in log if "clip contents:" in l), ""))
 
         # The poll loop, on its own, must also recognise a stub and drop it.
         w.begin_trigger()
