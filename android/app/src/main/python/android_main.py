@@ -60,6 +60,26 @@ def camera_ok() -> bool:
     return bool(w and w.camera_ok)
 
 
+def set_camera_host(host: str) -> str:
+    """Point the engine at the camera's actual address.
+
+    10.5.5.9 is a convention, not a promise. Kotlin reads the real one off
+    the network the phone just joined (the access point is the gateway), so
+    a camera that puts itself somewhere else still works instead of looking
+    like a camera that is not there.
+    """
+    w = _state.get("worker")
+    host = (host or "").strip()
+    if not w or not host:
+        return ""
+    client = w.client
+    if client.host != host:
+        client.host = host
+        # Endpoint paths were resolved against the old address.
+        client._resolved.clear()
+    return client.host
+
+
 def reconnect() -> None:
     """Called by Kotlin right after the WiFi binding lands, so the user does not
     wait for the next background tick."""

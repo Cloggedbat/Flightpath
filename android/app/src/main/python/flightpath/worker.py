@@ -872,7 +872,7 @@ class Worker:
                 f"connected ({res.firmware})" if ok and res.firmware
                 else "connected" if ok
                 else "camera answers but its status endpoint does not" if res.reachable
-                else "no camera at 10.5.5.9"
+                else f"no camera at {self.client.host}"
             )
         if ok:
             try:
