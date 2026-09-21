@@ -1,5 +1,5 @@
 {
-  "versionCode": 31,
-  "versionName": "0.1.30",
-  "notes": "Your camera is fine: 58.6 MB clip on the card, 118 GB free, no card, battery or temperature warning. So the short clips are this app's fault, not the camera's. This build downloads that 26 KB file and prints what is actually inside it, which says whether the camera wrote no video frames or never finished the file. Run Test camera and send the 'clip contents' line."
+  "versionCode": 32,
+  "versionName": "0.1.31",
+  "notes": "The camera test log was burying its own answer under one line per second. It now prints only when something changes, and the contents of the short clip are added to the final verdict line, so the whole test fits on one screen. Also: your battery was at 20%, and 1080p240 is the most power hungry mode this camera has, so plug the camera into USB power before the next test. Note the updater needs the camera's WiFi off, since that link has no internet."
 }

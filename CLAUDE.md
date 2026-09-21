@@ -49,7 +49,21 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.30, versionCode 31.
+App version 0.1.31, versionCode 32.
+
+0.1.31: the 17:09 run (2026-09-21) never showed the clip contents line,
+because the per-second size trace printed 25 lines per test and buried
+it. The trace now prints only when the size changes, and the contents
+are appended to the verdict, which is the last line and the one anyone
+actually reads. Same run: battery 20%, down from 30% an hour earlier,
+and the camera still wrote 27,639 bytes. 1080p240 is this camera's peak
+power draw and a battery sagging under it aborts a recording before the
+camera raises its own battery flag, so _stub_reason now names a battery
+at or under 40% and says to plug the camera in. Not confirmed; it is the
+cheapest remaining test. Also seen: the in-app updater cannot reach the
+update server while bound to the camera's WiFi (UnknownHostException),
+which is expected, since that link has no internet. Update first, then
+connect to the camera.
 
 0.1.30: IT WAS THE VPN. With it off the camera connects and the whole
 test runs (12:38, 2026-09-21). That closes a bug that cost days and sent

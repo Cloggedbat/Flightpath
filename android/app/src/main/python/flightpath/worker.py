@@ -291,9 +291,15 @@ class Worker:
             return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
                     "and it reports that it is overheating. Let it cool down.")
         pct = h.get("battery_pct")
-        if isinstance(pct, int) and pct <= 15:
+        if isinstance(pct, int) and pct <= 40:
+            # The camera only raises its own battery flag when nearly flat,
+            # but 1080p240 is its peak power draw and a battery that sags
+            # under that load aborts the recording and writes a stub.
             return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
-                    f"and its battery is at {pct}%. Charge it and try again.")
+                    f"and its battery is at {pct}%. 1080p240 is the most power hungry mode "
+                    "on this camera, and a battery sagging under it aborts the recording "
+                    "before the camera flags a warning. Plug the camera into USB power, or "
+                    "fit a charged battery, and try again.")
         return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
                 "and it reports no card, battery or temperature problem. Record a few "
                 "seconds with the camera's own shutter button, then run Test camera: "
@@ -346,7 +352,9 @@ class Worker:
             listed = item.size
             served = self.client.clip_size(item)
             size = served if served is not None else listed
-            if trace:
+            # Only when it changes. Printing every second buried everything
+            # else in the log, including the answer.
+            if trace and (last is None or last[1] != size):
                 trace(f"  {item.name}: media list says {listed} B, download server says "
                       + (f"{served} B" if served is not None else "nothing"))
             if size >= MIN_CLIP_BYTES and last == (item.path, size):
@@ -749,12 +757,17 @@ class Worker:
                             # all, which no amount of guessing can.
                             try:
                                 p = self.client.download(stub, self.settings.clip_dir)
-                                self._note(mp4probe.summary(mp4probe.probe(p)))
+                                contents = mp4probe.summary(mp4probe.probe(p))
                             except Exception as exc:               # noqa: BLE001
-                                self._note("could not fetch the stub to look inside it: "
-                                           f"{type(exc).__name__}: {exc}")
+                                contents = ("could not fetch the stub to look inside it: "
+                                            f"{type(exc).__name__}: {exc}")
+                            self._note(contents)
+                            # Carry the contents in the verdict too: it is the
+                            # last line of the test, so it is the one line a
+                            # user actually reads.
                             verdict_shutter = (f"STUB CLIP, {stub.size // 1024} KB: "
-                                               + self._stub_reason(stub.size, after_health))
+                                               + self._stub_reason(stub.size, after_health)
+                                               + " || " + contents)
                         else:
                             self._note(f"new clip: none within {self.CLIP_SETTLE_S:.0f} s")
                             verdict_shutter = "NO CLIP (camera on a menu screen? press Mode)"

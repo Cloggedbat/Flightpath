@@ -269,9 +269,11 @@ def stub_scenario(clip: str) -> None:
         w.begin_trigger()
         threading.Thread(target=w.trigger, args=(0.5,), daemon=True).start()
         w.start()
+        # Generous: the camera test downloads the stub to inspect it, so the
+        # run before this one is slower than it looks.
         check("stub: poll loop drops the stub and says why",
               wait_for(lambda: any(p.endswith("GX010004.MP4") for p in w.seen)
-                       and "stopped recording almost at once" in w.last_error, 20.0),
+                       and "stopped recording almost at once" in w.last_error, 45.0),
               w.last_error)
         check("stub: nothing queued for analysis", not w.snapshot()["queue"], str(w.snapshot()["queue"]))
     finally:
