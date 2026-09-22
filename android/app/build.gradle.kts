@@ -23,8 +23,8 @@ android {
         applicationId = "dev.flightpath.app"
         minSdk = 29            // WifiNetworkSpecifier needs API 29; Chaquopy needs 24
         targetSdk = 34
-        versionCode = 39
-        versionName = "0.1.38"
+        versionCode = 40
+        versionName = "0.1.39"
         // Baked-in default; the app lets the user change it. Pass
         // -PupdateUrl=https://your-service.up.railway.app at build time.
         buildConfigField("String", "UPDATE_URL",

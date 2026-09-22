@@ -137,6 +137,16 @@ def main() -> int:
         check("reference frame is a JPEG",
               bool(w.ref_frame_jpeg) and w.ref_frame_jpeg[:2] == b"\xff\xd8")
         check("reference frame is 1920x1080", w.ref_frame_size == (1920, 1080), str(w.ref_frame_size))
+        # Not frame zero: a GoPro opens a recording underexposed, so the
+        # first frame is dark and useless for tapping out a club.
+        import cv2 as _cv2
+        _c = _cv2.VideoCapture(clip)
+        _ok, _first = _c.read()
+        _c.release()
+        _okj, _firstjpg = _cv2.imencode(".jpg", _cv2.cvtColor(_first, _cv2.COLOR_BGR2GRAY),
+                                        [int(_cv2.IMWRITE_JPEG_QUALITY), 82])
+        check("reference frame is not the clip's first frame",
+              _ok and _okj and w.ref_frame_jpeg != _firstjpg.tobytes())
         check("downloaded the full clip, not the 0 MB stub",
               bool(cam.served) and cam.served[-1][1] == full, str(cam.served))
         check("calibration clip marked seen so it is never a shot",

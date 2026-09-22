@@ -1,5 +1,5 @@
 {
-  "versionCode": 39,
-  "versionName": "0.1.38",
-  "notes": "Fixes Calibrate timing out with no beep from the camera. The Bluetooth link had quietly dropped between Test camera and Calibrate, and the app fell back to the WiFi shutter, which does nothing on this camera. It now rebuilds the Bluetooth link automatically when it is needed, and if it cannot, it says so instead of timing out. Update, connect with the green button, then go to 3 Calibrate and capture the reference frame."
+  "versionCode": 40,
+  "versionName": "0.1.39",
+  "notes": "Fixes the dark calibration picture. The app was using the very first frame of the recording, and a GoPro starts a recording underexposed before its auto exposure settles. It now records for 3 seconds and takes the picture about a second in, which should be properly exposed. The picture is grey rather than colour on purpose: the tracker only uses brightness."
 }

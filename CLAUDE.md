@@ -49,7 +49,20 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.38, versionCode 39.
+App version 0.1.39, versionCode 40.
+
+0.1.39 fixes a dark reference frame. AJ, after the first successful
+calibration capture: "that part still is dark on capture". The capture
+took the FIRST frame of the recording, and a GoPro opens a recording
+underexposed because its auto exposure has not settled, so the user was
+asked to tap the ends of a club they could barely see. It now walks
+REF_FRAME_SKIP frames in (240, one second at 240 fps) and keeps the last
+frame that decoded, falling back to whatever a short clip has. The
+capture window went from 2 s to 3 s to give the exposure room. The
+harness asserts the reference frame is not the clip's first frame.
+
+Note the frame is grayscale by design (ClipDecoder returns luma, which
+is all the tracker uses). Dark is a bug; grey is not.
 
 0.1.38 fixes the calibration capture. AJ on 0.1.36: "when i try to
 capture it gives me an error timed out, the camera also did not beep

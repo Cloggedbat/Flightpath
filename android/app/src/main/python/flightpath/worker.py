@@ -36,6 +36,11 @@ from .session import Session, Shot
 # the media list and the download server agreed on that size for 25 s.
 MIN_CLIP_BYTES = 256 * 1024
 
+# How far into a calibration clip to look for the reference frame. One
+# second at 240 fps: long enough for the camera's auto exposure to settle,
+# short enough to decode quickly.
+REF_FRAME_SKIP = 240
+
 
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
 
@@ -510,7 +515,18 @@ class Worker:
 
             cap = nativecap.open_capture(path)
             opened = cap.isOpened()
-            ok, frame = cap.read() if opened else (False, None)
+            # NOT the first frame. A GoPro opens a recording underexposed and
+            # its auto exposure takes a moment to settle, so frame zero comes
+            # out dark and the user is asked to tap the ends of a club they
+            # can barely see. Walk about a second in and keep the last frame
+            # that decoded; a short clip just yields whatever it has.
+            ok, frame = False, None
+            if opened:
+                for _ in range(REF_FRAME_SKIP):
+                    got, f = cap.read()
+                    if not got:
+                        break
+                    ok, frame = True, f
             # Read the diagnostics before release() drops the decoder.
             detail = cap.info() if isinstance(cap, nativecap.NativeCapture) else {}
             cap.release()

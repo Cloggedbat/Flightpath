@@ -1084,7 +1084,9 @@
     $("calShoot").disabled = true;
     $("calStat").className = "calibStat";
     $("calStat").textContent = "Recording a short clip…";
-    post("/api/calibrate/capture", { seconds: 2 }).then(function () {
+    // Three seconds, not two: the camera needs a moment to settle its
+    // exposure, and the reference frame is taken from a second in.
+    post("/api/calibrate/capture", { seconds: 3 }).then(function () {
       calPolling = true;
       calWatch();
     });
