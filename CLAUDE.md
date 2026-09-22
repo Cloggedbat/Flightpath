@@ -793,6 +793,33 @@ A different key means every user must uninstall.
   link, and Quik auto-connects over Bluetooth in the background and can
   command the camera mid-recording. Force-stop Quik before FlightPath.
 - Rolling-shutter time model: `t = frame/fps + (y/H) * readout`.
+- Open GoPro, read it BEFORE guessing. https://gopro.github.io/OpenGoPro/docs/
+  ("BLE spec", "HTTP spec"), and the real detail is in their SDK source:
+  demos/python/sdk_wireless_camera_control/open_gopro/api/ble_commands.py
+  and ble_statuses.py, plus demos/python/tutorial/tutorial_modules/.
+  GoPro's own split: all three transports (BLE, WiFi, USB) do camera
+  state, settings and encoding; video streaming and media transfer are
+  WiFi only. That is the split this project discovered the hard way, and
+  the WiFi shutter being dead on this model cost a week because the
+  community docs said so on day one and it was not acted on.
+- GoPro's per-interface table (docs, "Control Camera and Record
+  Remotely"): Retrieve Camera State, Change Settings/Mode and Encode
+  (press shutter) are ticked for BLE, WiFi and USB. Stream Video, Media
+  Management and Metadata Extraction are WiFi and USB only. Camera
+  Connect / Wake is BLE ONLY, which is why no amount of WiFi work could
+  ever have woken this camera. So the WiFi shutter is meant to work and
+  simply does not on this HERO9, consistent with "deprecated from this
+  model on" rather than "never existed".
+- Their caveat, which matters: "Most command-and-control functionality
+  is disabled while the camera is recording video or is otherwise busy."
+  That applies to BLE too, not just WiFi. So the idea of watching status
+  13 tick over BLE during a recording is NOT safe to assume; it has to be
+  tested before anything depends on it. trigger() sleeping the window
+  and confirming by clip stays the reliable design until then.
+- Possible later adoptions over BLE, none tested: GET_CAMERA_STATUSES /
+  REGISTER_ALL_STATUSES (CQ_QUERY), LOAD_PRESET_GROUP and LOAD_PRESET
+  (set Video mode), get_hardware_info, set_date_time, tag_hilight,
+  set_third_party_client_info. All AFTER the range steps.
 
 ### Conventions
 
