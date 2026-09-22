@@ -36,10 +36,14 @@ from .session import Session, Shot
 # the media list and the download server agreed on that size for 25 s.
 MIN_CLIP_BYTES = 256 * 1024
 
-# How far into a calibration clip to look for the reference frame. One
-# second at 240 fps: long enough for the camera's auto exposure to settle,
-# short enough to decode quickly.
-REF_FRAME_SKIP = 240
+# How far into a calibration clip to look for the reference frame, and how
+# long that is allowed to take. Every frame costs a 2 MB buffer across the
+# Java/Python boundary on the phone, so 240 of them (the first attempt at
+# this) is minutes of work where there used to be one frame, and the step
+# looked broken. A quarter of a second is enough to get off the opening
+# frames; the wall clock stops it ever hanging the wizard.
+REF_FRAME_SKIP = 60
+REF_FRAME_BUDGET_S = 4.0
 
 
 CONFIG_KEYS = ("ref_px", "ref_inches", "club", "mode", "camera_profile")
@@ -522,11 +526,14 @@ class Worker:
             # that decoded; a short clip just yields whatever it has.
             ok, frame = False, None
             if opened:
+                deadline = time.monotonic() + REF_FRAME_BUDGET_S
                 for _ in range(REF_FRAME_SKIP):
                     got, f = cap.read()
                     if not got:
                         break
                     ok, frame = True, f
+                    if time.monotonic() > deadline:
+                        break                  # good enough, never hang here
             # Read the diagnostics before release() drops the decoder.
             detail = cap.info() if isinstance(cap, nativecap.NativeCapture) else {}
             cap.release()

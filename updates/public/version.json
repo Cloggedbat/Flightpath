@@ -1,5 +1,5 @@
 {
-  "versionCode": 40,
-  "versionName": "0.1.39",
-  "notes": "Fixes the dark calibration picture. The app was using the very first frame of the recording, and a GoPro starts a recording underexposed before its auto exposure settles. It now records for 3 seconds and takes the picture about a second in, which should be properly exposed. The picture is grey rather than colour on purpose: the tracker only uses brightness."
+  "versionCode": 41,
+  "versionName": "0.1.40",
+  "notes": "Fixes Calibrate, which the last update broke. It was decoding far too many frames on the phone before showing you the picture, so the step appeared to hang. It now does a fraction of that work and gives up after four seconds no matter what. If the picture still comes out too dark in a well lit room, tell me and send the log rather than me guessing again."
 }

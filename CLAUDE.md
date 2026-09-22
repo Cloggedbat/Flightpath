@@ -49,7 +49,21 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.39, versionCode 40.
+App version 0.1.40, versionCode 41.
+
+0.1.40 undoes the damage 0.1.39 did. AJ: "this still doesnt work and now
+calibrate 3 is not working". 0.1.39 made the capture decode 240 frames
+before showing anything, and on the phone every frame is a 2 MB buffer
+copied across the Java/Python boundary, so what used to be one frame
+became an enormous amount of work and the step looked broken. It is now
+60 frames with a 4 s wall-clock budget, keeping the last frame decoded,
+so it can never hang the wizard.
+
+Worth being honest about: the dark-frame theory behind 0.1.39 may have
+been wrong. AJ's first successful capture showed a recognisable desk,
+laptop and microphone, which is what a dim room looks like, not
+necessarily a camera whose exposure had not settled. If a capture is
+still dark in a well lit scene, get evidence before theorising again.
 
 0.1.39 fixes a dark reference frame. AJ, after the first successful
 calibration capture: "that part still is dark on capture". The capture
