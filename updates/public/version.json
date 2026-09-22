@@ -1,5 +1,5 @@
 {
-  "versionCode": 33,
-  "versionName": "0.1.32",
-  "notes": "The shutter now goes over Bluetooth instead of WiFi. GoPro deprecated the WiFi shutter from the HERO9 onwards, which is why every attempt timed out and left the same 27,639 byte file behind whatever the battery, mode or card. Bluetooth is GoPro's supported path and the app already has that link open. Use the green button to connect (that is what opens Bluetooth), then run Test camera: the new clip should be tens of MB, not 26 KB."
+  "versionCode": 34,
+  "versionName": "0.1.33",
+  "notes": "The shutter works: 79.8 MB clip instead of 26 KB. This build cleans up after that, so the camera test no longer tells you 404s and timeouts are normal when the shutter answered cleanly, and a WiFi shutter failure now says that path is deprecated and points you at the green button. Next: step 3 Calibrate, capture the reference frame."
 }

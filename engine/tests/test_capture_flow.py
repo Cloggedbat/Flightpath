@@ -55,6 +55,9 @@ def main() -> int:
 
     cam = FakeHero9(clip).start()
     client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
+    # As the app runs: the shutter goes over Bluetooth, because this
+    # camera's WiFi shutter is deprecated and only leaves a stub.
+    client.ble = FakeBle(cam)
     settings = Settings(clip_dir=os.path.join(tmp, "clips"),
                         session_path=os.path.join(tmp, "session.json"),
                         config_path=os.path.join(tmp, "config.json"),
@@ -155,8 +158,9 @@ def main() -> int:
             check("verdict: shutter ok with a clip size", "shutter ok" in verdict[0], verdict[0])
             check("verdict: stream ok, MPEG-TS found",
                   "stream ok" in verdict[0] and "MPEG-TS found" in verdict[0], verdict[0])
-        check("camera test explains the shutter errors are normal",
-              any("normal on this" in l for l in log))
+        check("camera test does not excuse HTTP noise that never happened",
+              not any("normal behaviour" in l for l in log),
+              "the shutter went over Bluetooth, so there was no 404 to excuse")
         check("no poll failures logged anywhere", not any("camera poll" in l for l in log))
         check("camera test clip marked seen", any(p.endswith("GX010004.MP4") for p in w.seen))
 
@@ -273,7 +277,7 @@ def health_scenario(clip: str) -> None:
     name the card rather than offer the three-way guess."""
     print("--- camera health ---", flush=True)
     tmp = tempfile.mkdtemp(prefix="fp_health_")
-    cam = FakeHero9(clip, stub_clips=True, list_lag_s=0.0,
+    cam = FakeHero9(clip, list_lag_s=0.0,
                     write_speed_errors=7, battery_pct=64).start()
     client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
     w = Worker(Settings(clip_dir=os.path.join(tmp, "clips"),
@@ -317,7 +321,9 @@ def stub_scenario(clip: str) -> None:
     not call it a menu-screen problem."""
     print("--- stub clips ---", flush=True)
     tmp = tempfile.mkdtemp(prefix="fp_stub_")
-    cam = FakeHero9(clip, stub_clips=True, list_lag_s=0.0).start()
+    # No Bluetooth link, so the app falls back to the deprecated WiFi
+    # shutter, which is exactly how the stub happens on the real camera.
+    cam = FakeHero9(clip, list_lag_s=0.0).start()
     client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
     settings = Settings(clip_dir=os.path.join(tmp, "clips"),
                         session_path=os.path.join(tmp, "session.json"),

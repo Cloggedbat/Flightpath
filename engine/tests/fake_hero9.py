@@ -6,12 +6,12 @@ down in CLAUDE.md under Camera facts:
 - Two HTTP servers. Open GoPro, media list and downloads on one port; the
   legacy gpControl commands on another (80 on the real camera).
 - The Open GoPro shutter 404s. The legacy shutter never answers (the client
-  times out). NOTE, and this matters: this fake still models "it records
-  anyway", which was the belief from 0.1.11. The real camera has never
-  produced a usable clip from the HTTP shutter, only a 27,639 byte stub, so
-  that model is probably wrong and the harness should not be read as
-  blessing the HTTP shutter path. Use stub_clips=True for what the real
-  camera actually does, and the Bluetooth shutter for what works.
+  times out) and does NOT record: it leaves a 27,639 byte stub and ties the
+  camera up for a while. GoPro deprecated the WiFi control commands from
+  this model on. Proven 2026-09-22: the same camera, same moment, produced
+  a 79.8 MB clip the instant the shutter went over Bluetooth instead.
+  wifi_shutter_records=True restores the old wrong belief for a camera that
+  really does answer HTTP.
 - While recording, every request on both ports is dropped without a reply.
   After stop, every request gets 500 for a finalisation period (19 to 20 s
   on the real camera), then the camera is idle.
@@ -43,7 +43,8 @@ class FakeHero9:
     def __init__(self, clip_path: str, *, start_delay_s: float = 2.5,
                  finalize_s: float = 2.0, size_settle_s: float = 1.5,
                  list_lag_s: float = 4.0, range_support: bool = True,
-                 stub_clips: bool = False, write_speed_errors: int = 0,
+                 stub_clips: bool = False, wifi_shutter_records: bool = False,
+                 write_speed_errors: int = 0,
                  sd_errors: int = 0, overheating: bool = False,
                  battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
                  preset_group: int = 1000, flatmode: int = 12,
@@ -60,8 +61,12 @@ class FakeHero9:
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
         # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
-        # bytes. With this on, every recording is that stub.
+        # bytes. With this on, every recording is that stub, however it was
+        # started.
         self.stub_clips = stub_clips
+        # Whether the deprecated WiFi shutter actually records. On the real
+        # HERO9 it does not; it only ever leaves a stub.
+        self.wifi_shutter_records = wifi_shutter_records
         self.start_delay_s = start_delay_s
         self.finalize_s = finalize_s
         # File written (and served whole) size_settle_s after finalisation.
@@ -212,8 +217,13 @@ class FakeHero9:
             if p == "1":
                 with self.lock:
                     if not self._dead(now):
-                        self.recording_since = now
                         self.streaming = False       # the shutter kills the stream
+                        if self.wifi_shutter_records:
+                            self.recording_since = now
+                        else:
+                            # Deprecated: a stub lands on the card and the
+                            # camera is tied up for a while afterwards.
+                            self._end_recording(now, stub=True)
                 time.sleep(self.start_delay_s)       # the client times out first
                 return None
             with self.lock:
@@ -288,13 +298,15 @@ class FakeHero9:
                 return self._json({})
         return self._json({}, 404)
 
-    def _end_recording(self, now: float) -> None:
+    def _end_recording(self, now: float, stub: bool | None = None) -> None:
         duration = now - (self.recording_since or now)
         self.recording_since = None
         self.dead_until = now + self.finalize_s
         name = f"GX01{self.next_no:04d}.MP4"
         self.next_no += 1
-        size = 27_639 if self.stub_clips else len(self.clip_bytes)
+        if stub is None:
+            stub = self.stub_clips
+        size = 27_639 if stub else len(self.clip_bytes)
         clip = {"n": name, "size": size, "mod": int(time.time()),
                 "settle_at": now + self.finalize_s + self.size_settle_s,
                 "duration_s": round(duration, 2)}

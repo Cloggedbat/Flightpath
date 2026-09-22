@@ -49,7 +49,31 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.32, versionCode 33.
+App version 0.1.33, versionCode 34.
+
+0.1.33: THE SHUTTER WORKS. 2026-09-22, 11:21, on the real camera:
+
+  shutter start: answered
+  after stop: idle confirmed after 1 s
+  new clip: 100GOPRO/GX010562.MP4 (79.8 MB, size settled after 2 s)
+  verdict: shutter ok, 79.8 MB clip; stream ok, MPEG-TS found
+
+79.8 MB instead of 27,639 bytes, the stop confirmed in 1 s instead of
+12 to 20, and AJ watched the camera's own screen stay on with the
+recording clock counting up. The HERO9's WiFi shutter is deprecated and
+never recorded anything; every "it errors but records anyway, that is
+normal" line written since 0.1.11 was wrong, and the 27,639 byte stub
+was what a dead command leaves behind.
+
+So the fake now models reality: the legacy WiFi shutter leaves a stub
+and does not record (wifi_shutter_records=False by default), the main
+flow scenario drives the shutter over Bluetooth like the app does, and
+the stub scenario gets its stub by simply having no Bluetooth link,
+which is exactly how it happens. The camera test no longer claims 404s
+and timeouts are "normal behaviour" when the shutter answered cleanly;
+that caveat is only printed when there really was HTTP noise, and the
+WiFi shutter failure now says the path is deprecated and points at the
+green button.
 
 0.1.32 fires the shutter over Bluetooth. The case, in order: GoPro
 deprecated the WiFi control commands from the HERO9 on ("Beginning from
@@ -530,6 +554,9 @@ camera on the WiFi menu; it says to press Mode and return to the shooting
 screen, since a camera in a menu neither records nor previews.
 
 Proven:
+- The shutter works over Bluetooth: 79.8 MB clip, stop confirmed in 1 s,
+  recording clock visible on the camera (2026-09-22). The WiFi shutter
+  is deprecated on this model and records NOTHING; do not use it.
 - The camera and its SD card record normally: GX010555.MP4 is 58.6 MB,
   118 GB free, and the camera reports no card, battery or temperature
   problem (2026-09-21). Any stub clip is the app's shutter, not hardware.
@@ -555,21 +582,11 @@ Proven:
 - Media list works once the SD card is in. With no card the HERO9 answers
   status but 404s on both media list paths.
 
-THE open question: the app's shutter writes exactly 27,639 bytes, every
-time, byte identical across battery 18 to 62 percent, in Video mode,
-118 GB free, no card or temperature warning, while the same camera
-records 58.6 MB from its own button. Deterministic, so it is software.
-Best explanation: the HERO9's WiFi shutter is deprecated and does not
-work, which is why every HTTP attempt times out. 0.1.32 moves the
-shutter to Bluetooth. Unconfirmed.
-
 NOT proven (in order of importance):
-1. That the camera records a real clip on the app's shutter at all. On
-   2026-09-18 it closed GX010551.MP4 at 27,639 bytes for a 3 s window
-   (see 0.1.20). Whether the camera's own button records normally is the
-   next fact to get: record 3 s by hand, then Test camera reads its size.
-   The chain after the clip is proven against tests/fake_hero9.py.
-2. Live view. The stream format is now understood (Camera facts) and
+1. A calibration capture end to end in the wizard: shutter, download,
+   decode, reference frame on screen. Every piece is now proven
+   separately, so this should just work.
+2. Live view. The stream format is understood (Camera facts) and
    TsUdpDataSource.kt strips the header; the phone has not yet shown a
    frame of it.
 3. Any real golf ball. Every number ever produced is from a synthetic clip.
@@ -582,6 +599,9 @@ Five steps, about 2 hours total, no new features until they are done:
 1. DONE 2026-09-17: Engine row reads ok (H.264 + HEVC, MediaCodec).
 2. DONE: Apply camera settings works and always has. If the panel shows
    "code 0" after Test camera, that is a stale read; tap Apply again.
+2b. DONE 2026-09-22: the shutter records a real 79.8 MB clip, over
+   Bluetooth. Always connect with the green button; that is what opens
+   the Bluetooth link the shutter needs.
 3. `dropcal`: drop a ball past the lens, get px/m and readout time (30 min).
 4. Hit ONE 7-iron outdoors. Expect roughly 110 to 125 mph at 17 to 21 degrees.
 5. Hit twenty. Check consistency, not accuracy.
