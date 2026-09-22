@@ -28,7 +28,10 @@ def start(files_dir: str, port: int = 8080) -> str:
         session_path=os.path.join(files_dir, "session.json"),
         config_path=os.path.join(files_dir, "config.json"),
     )
-    worker = Worker(settings, gopro.GoProClient())
+    client = gopro.GoProClient()
+    # Survive an engine restart: the Bluetooth link outlives it.
+    client.ble = _state.get("ble")
+    worker = Worker(settings, client)
     worker.start()
 
     httpd = serve(worker, "127.0.0.1", port)
@@ -58,6 +61,19 @@ def stop() -> None:
 def camera_ok() -> bool:
     w = _state.get("worker")
     return bool(w and w.camera_ok)
+
+
+def set_ble(ble) -> None:
+    """Give the engine the open Bluetooth link to the camera.
+
+    The HERO9's WiFi shutter is deprecated and has never worked here: every
+    attempt times out and leaves a 27,639 byte stub. Bluetooth is the
+    supported path, so the engine fires the shutter through this object.
+    """
+    w = _state.get("worker")
+    _state["ble"] = ble
+    if w is not None:
+        w.client.ble = ble
 
 
 def set_camera_host(host: str) -> str:

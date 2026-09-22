@@ -1,5 +1,5 @@
 {
-  "versionCode": 32,
-  "versionName": "0.1.31",
-  "notes": "The camera test log was burying its own answer under one line per second. It now prints only when something changes, and the contents of the short clip are added to the final verdict line, so the whole test fits on one screen. Also: your battery was at 20%, and 1080p240 is the most power hungry mode this camera has, so plug the camera into USB power before the next test. Note the updater needs the camera's WiFi off, since that link has no internet."
+  "versionCode": 33,
+  "versionName": "0.1.32",
+  "notes": "The shutter now goes over Bluetooth instead of WiFi. GoPro deprecated the WiFi shutter from the HERO9 onwards, which is why every attempt timed out and left the same 27,639 byte file behind whatever the battery, mode or card. Bluetooth is GoPro's supported path and the app already has that link open. Use the green button to connect (that is what opens Bluetooth), then run Test camera: the new clip should be tens of MB, not 26 KB."
 }

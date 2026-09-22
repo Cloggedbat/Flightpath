@@ -173,6 +173,7 @@ def main() -> int:
 
     stub_scenario(clip)
     health_scenario(clip)
+    ble_shutter_scenario(clip)
 
     print()
     if fails:
@@ -180,6 +181,91 @@ def main() -> int:
         return 1
     print("all checks passed")
     return 0
+
+
+class FakeBle:
+    """The open Bluetooth link, standing in for CameraBle.kt. Drives the fake
+    camera exactly as the real shutter command does: 03:01:01:01 on,
+    03:01:01:00 off."""
+
+    def __init__(self, cam, ready=True, error=""):
+        self.cam = cam
+        self.ready = ready
+        self.error = error
+        self.calls: list[str] = []
+
+    def isReady(self):                                     # noqa: N802 (Java name)
+        return self.ready
+
+    def shutterStart(self):                                # noqa: N802
+        self.calls.append("start")
+        if self.error:
+            return self.error
+        with self.cam.lock:
+            if not self.cam._dead(time.monotonic()):
+                self.cam.recording_since = time.monotonic()
+                self.cam.streaming = False
+        return ""
+
+    def shutterStop(self):                                 # noqa: N802
+        self.calls.append("stop")
+        if self.error:
+            return self.error
+        with self.cam.lock:
+            if self.cam._recording():
+                self.cam._end_recording(time.monotonic())
+        return ""
+
+
+def ble_shutter_scenario(clip: str) -> None:
+    """With a Bluetooth link the shutter goes over it, not over HTTP, and a
+    camera whose WiFi shutter is a dead end still records."""
+    print("--- bluetooth shutter ---", flush=True)
+    tmp = tempfile.mkdtemp(prefix="fp_ble_")
+    full = os.path.getsize(clip)
+    # wifi_shutter_dead reproduces this HERO9: the HTTP shutter never works.
+    cam = FakeHero9(clip, list_lag_s=0.0).start()
+    client = gopro.GoProClient(host="127.0.0.1", port=cam.port, control_port=cam.control_port)
+    w = Worker(Settings(clip_dir=os.path.join(tmp, "clips"),
+                        session_path=os.path.join(tmp, "session.json"),
+                        config_path=os.path.join(tmp, "config.json"),
+                        poll_seconds=0.5), client)
+    ble = FakeBle(cam)
+    client.ble = ble
+    try:
+        w._connect()
+        check("ble: connected", w.camera_ok, w.camera_note)
+        before = len([r for r in cam.requests if "shutter" in r])
+        w.capture_reference_frame(seconds=0.5)
+        check("ble: capture produced a reference frame", w.calib_stage == "ready",
+              f"{w.calib_stage}: {w.calib_message}")
+        check("ble: shutter went over Bluetooth", ble.calls[:1] == ["start"], str(ble.calls))
+        check("ble: and it was stopped over Bluetooth", "stop" in ble.calls, str(ble.calls))
+        after = len([r for r in cam.requests if "shutter" in r])
+        check("ble: no HTTP shutter was sent at all", after == before, f"{after - before} HTTP shutter calls")
+        check("ble: the clip is a real one, not a stub",
+              bool(cam.served) and cam.served[-1][1] == full, str(cam.served))
+
+        # A camera that refuses over Bluetooth must say so, not fail silently.
+        client.ble = FakeBle(cam, error="the camera refused the command (status 2)")
+        try:
+            client.start_recording()
+            check("ble: a refusal raises", False, "no exception")
+        except gopro.GoProError as exc:
+            check("ble: a refusal raises and names the reason", "refused" in str(exc), str(exc))
+
+        # No link: fall back to HTTP exactly as before.
+        client.ble = FakeBle(cam, ready=False)
+        n0 = len([r for r in cam.requests if "shutter" in r])
+        try:
+            client.start_recording()
+        except Exception:                                  # noqa: BLE001
+            pass
+        check("ble: with no link it falls back to HTTP",
+              len([r for r in cam.requests if "shutter" in r]) > n0)
+    finally:
+        w.stop()
+        cam.stop()
 
 
 def health_scenario(clip: str) -> None:

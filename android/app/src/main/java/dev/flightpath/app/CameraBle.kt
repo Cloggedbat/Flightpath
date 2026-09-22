@@ -20,6 +20,10 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Wakes the camera's WiFi over Bluetooth.
@@ -66,8 +70,17 @@ class CameraBle(private val context: Context) {
     private var listener: Listener? = null
     private var scanning = false
     private var finished = false
+    /** Whether the GATT link is actually up. `gatt` stays non-null after a
+     *  drop, and its cached services still answer, so without this isReady()
+     *  would happily report a dead link as usable. */
+    @Volatile private var linkUp = false
     private var ssid = ""
     private var password = ""
+
+    // Replies to a command we sent and are waiting on, by command id.
+    private val cmdLatch = AtomicReference<CountDownLatch?>(null)
+    private val cmdId = AtomicInteger(-1)
+    private val cmdStatus = AtomicInteger(-1)
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -92,10 +105,14 @@ class CameraBle(private val context: Context) {
 
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothGatt.STATE_CONNECTED) {
+                linkUp = true
                 report("Connected. Reading the camera's WiFi details.")
                 main.postDelayed({ discover(g) }, 600)   // settle before discovery
-            } else if (newState == BluetoothGatt.STATE_DISCONNECTED && !finished) {
-                fail(if (status == 133)
+            } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                linkUp = false
+                // A drop after the wake finished is not an error to report,
+                // but it does mean the shutter can no longer go this way.
+                if (!finished) fail(if (status == 133)
                     "Bluetooth dropped the connection. Put the camera on Preferences, " +
                         "Connections, Connect Device, GoPro App and try once more."
                 else "Bluetooth disconnected (status $status).")
@@ -286,6 +303,13 @@ class CameraBle(private val context: Context) {
     /** Response format: [length, command id, status, ...]. Status 0 is success. */
     private fun handleResponse(value: ByteArray) {
         if (value.size < 3) return
+        // Anything another thread is blocked waiting for.
+        val waiting = cmdId.get()
+        if (waiting >= 0 && value[1] == waiting.toByte()) {
+            cmdStatus.set(value[2].toInt())
+            cmdLatch.get()?.countDown()
+            return
+        }
         if (value[1] != 0x17.toByte()) return          // some other command's reply
         if (value[2] == 0x00.toByte()) {
             if (ssid.isBlank()) {
@@ -295,6 +319,69 @@ class CameraBle(private val context: Context) {
             succeed()
         } else {
             fail("The camera refused to turn its WiFi on (status ${value[2].toInt()}).")
+        }
+    }
+
+    // ---------- commands over the open link ----------
+
+    /** Is the Bluetooth link still up and usable for commands? */
+    fun isReady(): Boolean {
+        if (!linkUp) return false
+        val g = gatt ?: return false
+        return findChar(g, COMMAND_REQ) != null
+    }
+
+    /** Start recording over Bluetooth. Empty string on success, else why not. */
+    fun shutterStart(): String = sendCommand(0x01, byteArrayOf(0x03, 0x01, 0x01, 0x01))
+
+    /** Stop recording over Bluetooth. Empty string on success, else why not. */
+    fun shutterStop(): String = sendCommand(0x01, byteArrayOf(0x03, 0x01, 0x01, 0x00))
+
+    /**
+     * Send one command and wait for the camera's reply.
+     *
+     * The HERO9's WiFi shutter is a dead end. GoPro deprecated those control
+     * commands from this model on, every HTTP attempt has timed out, and what
+     * the camera leaves behind is a 27,639 byte stub, the same size whether
+     * the battery is at 18 percent or 62. Bluetooth is the supported path and
+     * the link is already open from waking the WiFi.
+     *
+     * Blocking on purpose: the engine calls this from its worker thread and
+     * wants to know whether the camera accepted the command.
+     */
+    @SuppressLint("MissingPermission")
+    private fun sendCommand(id: Int, bytes: ByteArray, timeoutMs: Long = 6000): String {
+        val g = gatt ?: return "no Bluetooth connection to the camera"
+        val req = findChar(g, COMMAND_REQ) ?: return "no command characteristic on the camera"
+        synchronized(this) {
+            val latch = CountDownLatch(1)
+            cmdId.set(id)
+            cmdStatus.set(-1)
+            cmdLatch.set(latch)
+            try {
+                val wrote = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    g.writeCharacteristic(req, bytes,
+                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    req.value = bytes
+                    @Suppress("DEPRECATION")
+                    req.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    @Suppress("DEPRECATION")
+                    g.writeCharacteristic(req)
+                }
+                if (!wrote) return "could not write the command over Bluetooth"
+                if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                    return "the camera did not reply over Bluetooth in ${timeoutMs / 1000} s"
+                }
+                val st = cmdStatus.get()
+                return if (st == 0) "" else "the camera refused the command (status $st)"
+            } catch (t: Throwable) {
+                return "${t.javaClass.simpleName}: ${t.message}"
+            } finally {
+                cmdId.set(-1)
+                cmdLatch.set(null)
+            }
         }
     }
 
@@ -332,6 +419,7 @@ class CameraBle(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun closeGatt() {
+        linkUp = false
         try { gatt?.disconnect() } catch (_: Exception) {}
         try { gatt?.close() } catch (_: Exception) {}
         gatt = null
@@ -350,11 +438,9 @@ class CameraBle(private val context: Context) {
         val s = ssid
         val p = password
         // The camera needs a moment to bring the access point up before the
-        // phone can join it.
-        main.postDelayed({
-            closeGatt()
-            l?.onWoken(s, p)
-        }, 2500)
+        // phone can join it. The GATT connection stays OPEN: the shutter goes
+        // over Bluetooth, because this camera's WiFi shutter does not work.
+        main.postDelayed({ l?.onWoken(s, p) }, 2500)
     }
 
     private fun fail(reason: String) {

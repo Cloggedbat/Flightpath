@@ -85,6 +85,16 @@ STATUS_BATTERY_PCT = 70
 STATUS_SD_WRITE_SPEED_ERROR = 111      # card too slow for the chosen mode
 STATUS_SD_ERRORS = 112
 STATUS_SD_CAPACITY = 117
+# Which mode the camera is actually IN, as opposed to what its video
+# settings say. Reading 1080p240 back proves the stored values, not the
+# mode: Time Lapse Video, Looping and TimeWarp all write a .MP4 too, and a
+# three second press in any of them yields a handful of frames.
+STATUS_FLATMODE = 89
+STATUS_VIDEO_PRESET = 93
+STATUS_PRESET_GROUP = 96
+STATUS_PRESET = 97
+
+PRESET_GROUP_NAMES = {1000: "Video", 1001: "Photo", 1002: "Timelapse"}
 
 # Human names for what the camera reports, so the UI can say "1080p" not "9".
 RES_NAMES = {1: "4K", 4: "2.7K", 6: "2.7K 4:3", 7: "1440p", 9: "1080p",
@@ -159,6 +169,11 @@ class GoProClient:
         self.control_port = control_port   # legacy gpControl server; 80 on a real camera
         self.timeout = timeout
         self._resolved: dict[str, str] = {}
+        # An open Bluetooth link to the camera, when the app has one. The
+        # HERO9's WiFi shutter is deprecated and does not work; Bluetooth is
+        # the supported path. Anything with shutterStart()/shutterStop()
+        # returning "" for success will do, which keeps this testable.
+        self.ble = None
 
     # ---------- plumbing ----------
 
@@ -258,14 +273,38 @@ class GoProClient:
         except GoProError:
             pass
 
+    def _ble_shutter(self, start: bool) -> str | None:
+        """Fire the shutter over Bluetooth. None when there is no link,
+        "" on success, else the camera's reason."""
+        ble = self.ble
+        if ble is None:
+            return None
+        try:
+            if not bool(ble.isReady()):
+                return None
+            return str(ble.shutterStart() if start else ble.shutterStop())
+        except Exception as exc:                           # noqa: BLE001
+            return f"{type(exc).__name__}: {exc}"
+
     def start_recording(self) -> None:
-        # Short timeout, fire and forget. On the HERO9 the shutter exists only
-        # on the legacy control server, which acts on the command but does not
-        # answer while recording. The worker confirms via state() rather than
-        # trusting a response that may never come.
+        """Bluetooth first. This camera's WiFi shutter is deprecated: every
+        attempt times out and leaves a 27,639 byte stub behind, the same size
+        whatever the battery, card or mode. HTTP stays as a fallback for
+        cameras that do answer it."""
+        err = self._ble_shutter(True)
+        if err == "":
+            return
+        if err:
+            raise GoProError(f"bluetooth shutter start: {err}")
+        # No Bluetooth link. Short timeout, fire and forget.
         self._call("shutter_start", timeout=2.0)
 
     def stop_recording(self) -> None:
+        err = self._ble_shutter(False)
+        if err == "":
+            return
+        if err:
+            raise GoProError(f"bluetooth shutter stop: {err}")
         self._call("shutter_stop", timeout=2.0)
 
     def start_preview(self) -> None:
@@ -371,7 +410,21 @@ class GoProClient:
             "sd_errors": g(STATUS_SD_ERRORS),
             "sd_remaining_mb": None if kb is None else int(kb) // 1024,
             "remaining_video_s": g(STATUS_REMAINING_VIDEO_S),
+            "preset_group": g(STATUS_PRESET_GROUP),
+            "flatmode": g(STATUS_FLATMODE),
+            "preset": g(STATUS_PRESET),
         }
+
+    @staticmethod
+    def in_video_mode(h: dict) -> bool | None:
+        """True, False, or None when the camera did not say."""
+        grp = h.get("preset_group")
+        if grp is None:
+            return None
+        try:
+            return int(grp) == PRESET_GROUP_VIDEO
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def health_line(h: dict) -> str:
@@ -388,6 +441,15 @@ class GoProClient:
         if h.get("remaining_video_s") is not None:
             bits.append(f"{h['remaining_video_s']} s of video left")
         warn = []
+        video = GoProClient.in_video_mode(h)
+        grp = h.get("preset_group")
+        if video is False:
+            warn.append("CAMERA IS NOT IN VIDEO MODE (preset group "
+                        f"{PRESET_GROUP_NAMES.get(int(grp), grp)})")
+        elif video is True:
+            bits.append("mode Video")
+        if h.get("flatmode") is not None or h.get("preset") is not None:
+            bits.append(f"flatmode {h.get('flatmode')}, preset {h.get('preset')}")
         if h.get("overheating"):
             warn.append("OVERHEATING")
         if h.get("sd_write_speed_error"):

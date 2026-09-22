@@ -277,6 +277,15 @@ class Worker:
         the three-way guess."""
         kb = size_bytes // 1024
         h = health or {}
+        if gopro.GoProClient.in_video_mode(h) is False:
+            grp = h.get("preset_group")
+            name = gopro.PRESET_GROUP_NAMES.get(
+                int(grp) if str(grp).isdigit() else grp, grp)
+            return (f"the camera wrote only {kb} KB because it is not in Video mode: it "
+                    f"is set to {name}. Time Lapse, Looping and TimeWarp all write an MP4 "
+                    "too, which is why this looked like a broken recording. Press the "
+                    "camera's Mode button until it shows plain Video, then tap Apply "
+                    "camera settings.")
         if h.get("sd_write_speed_error"):
             return (f"the camera stopped recording almost at once and wrote only {kb} KB, "
                     f"and it reports {h['sd_write_speed_error']} SD card write speed "
@@ -394,11 +403,16 @@ class Worker:
                     self.last_error = f"live view stop: {exc}"
 
             # Fire start and move on. A 404, a 500, or a timeout here does not
-            # mean it failed; on this camera the recording starts regardless.
+            # mean it failed; on this camera the HTTP shutter errors and the
+            # recording starts regardless. A Bluetooth refusal is different:
+            # that path does answer, so its reason is worth keeping.
             try:
                 self.client.start_recording()
-            except Exception:                              # noqa: BLE001
-                pass
+            except Exception as exc:                       # noqa: BLE001
+                if "bluetooth" in str(exc).lower():
+                    self._note(f"shutter start: {exc}")
+                    with self._lock:
+                        self.last_error = f"shutter start: {exc}"
 
             # Record the full window. Do NOT poll state to abort early: state
             # is unreadable during recording, so an early read would be a false

@@ -5,8 +5,13 @@ down in CLAUDE.md under Camera facts:
 
 - Two HTTP servers. Open GoPro, media list and downloads on one port; the
   legacy gpControl commands on another (80 on the real camera).
-- The Open GoPro shutter 404s. The legacy shutter starts the recording and
-  never answers (the client times out).
+- The Open GoPro shutter 404s. The legacy shutter never answers (the client
+  times out). NOTE, and this matters: this fake still models "it records
+  anyway", which was the belief from 0.1.11. The real camera has never
+  produced a usable clip from the HTTP shutter, only a 27,639 byte stub, so
+  that model is probably wrong and the harness should not be read as
+  blessing the HTTP shutter path. Use stub_clips=True for what the real
+  camera actually does, and the Bluetooth shutter for what works.
 - While recording, every request on both ports is dropped without a reply.
   After stop, every request gets 500 for a finalisation period (19 to 20 s
   on the real camera), then the camera is idle.
@@ -41,12 +46,17 @@ class FakeHero9:
                  stub_clips: bool = False, write_speed_errors: int = 0,
                  sd_errors: int = 0, overheating: bool = False,
                  battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
+                 preset_group: int = 1000, flatmode: int = 12,
                  udp_datagrams: int = 500, udp_header: bytes = b""):
         self.write_speed_errors = write_speed_errors
         self.sd_errors = sd_errors
         self.overheating = overheating
         self.battery_pct = battery_pct
         self.sd_remaining_kb = sd_remaining_kb
+        # 1000 Video, 1001 Photo, 1002 Timelapse. Set to 1002 to reproduce a
+        # camera that writes a tiny MP4 because it is timelapsing.
+        self.preset_group = preset_group
+        self.flatmode = flatmode
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
         # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
@@ -156,6 +166,10 @@ class FakeHero9:
             "35": 1800,
             "54": self.sd_remaining_kb,
             "70": self.battery_pct,
+            "89": self.flatmode,
+            "93": 0,
+            "96": self.preset_group,
+            "97": 0,
             "111": self.write_speed_errors,
             "112": self.sd_errors,
             "117": 1,

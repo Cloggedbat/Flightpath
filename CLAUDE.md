@@ -49,7 +49,38 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.31, versionCode 32.
+App version 0.1.32, versionCode 33.
+
+0.1.32 fires the shutter over Bluetooth. The case, in order: GoPro
+deprecated the WiFi control commands from the HERO9 on ("Beginning from
+the Hero9 Black, GoPro has deprecated some essential commands that were
+sent over WiFi"); our HTTP shutter has never once succeeded, 404 on Open
+GoPro and a timeout on legacy, every attempt for a week; and what it
+leaves behind is 27,639 bytes, the SAME to the byte at battery 18, 20,
+30 and 62 percent, in Video mode, with 118 GB free and no warnings. That
+is a deterministic software outcome, not hardware. Bluetooth is GoPro's
+documented path and the link is already open from waking the WiFi, so
+CameraBle.sendCommand() writes 03:01:01:01 to start and 03:01:01:00 to
+stop (GoPro's own tutorial) and blocks for the camera's reply.
+GoProClient.ble takes any object with isReady/shutterStart/shutterStop,
+tries it first, raises a named GoProError if the camera refuses, and
+falls back to HTTP when there is no link. Harness: a FakeBle drives the
+fake camera, proving the shutter goes over Bluetooth, no HTTP shutter is
+sent at all, a refusal raises with its reason, and no link falls back
+(60 checks).
+
+Still a hypothesis until it runs on the camera. Three defects found
+reviewing it before shipping: isReady() reported a dropped link as
+usable because gatt stays non-null and its cached services still answer
+(now tracks linkUp from onConnectionStateChange); trigger() swallowed a
+Bluetooth refusal along with the HTTP errors it is right to ignore (now
+surfaces anything mentioning bluetooth); and an engine restart lost the
+link (android_main.start() picks it back up from _state).
+
+Review finding worth keeping: tests/fake_hero9.py models the legacy
+shutter as "times out but records anyway", which came from 0.1.11 and
+the real camera has never borne out. The harness must not be read as
+blessing the HTTP shutter path. Its docstring now says so.
 
 0.1.31: the 17:09 run (2026-09-21) never showed the clip contents line,
 because the per-second size trace printed 25 lines per test and buried
@@ -523,6 +554,14 @@ Proven:
 - The 0.1.5 connection holds with cellular on. No airplane mode needed.
 - Media list works once the SD card is in. With no card the HERO9 answers
   status but 404s on both media list paths.
+
+THE open question: the app's shutter writes exactly 27,639 bytes, every
+time, byte identical across battery 18 to 62 percent, in Video mode,
+118 GB free, no card or temperature warning, while the same camera
+records 58.6 MB from its own button. Deterministic, so it is software.
+Best explanation: the HERO9's WiFi shutter is deprecated and does not
+work, which is why every HTTP attempt times out. 0.1.32 moves the
+shutter to Bluetooth. Unconfirmed.
 
 NOT proven (in order of importance):
 1. That the camera records a real clip on the app's shutter at all. On

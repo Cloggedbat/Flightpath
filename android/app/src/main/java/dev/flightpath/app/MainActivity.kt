@@ -281,6 +281,15 @@ class MainActivity : AppCompatActivity() {
 
             override fun onWoken(ssid: String, password: String) {
                 js("window.__nativeBle && window.__nativeBle('woken', ${q(ssid)})")
+                // The Bluetooth link stays open and the engine fires the
+                // shutter down it, because this camera's WiFi shutter does
+                // not work.
+                thread {
+                    runCatching {
+                        Python.getInstance().getModule("android_main")
+                            .callAttr("set_ble", ble)
+                    }
+                }
                 joinCameraWifi(ssid, password)
             }
 
