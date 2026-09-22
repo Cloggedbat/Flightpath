@@ -383,8 +383,13 @@
             <button class="sec" id="nUseCurrent" style="flex:1">Already joined in WiFi settings? Use that</button>
           </div>
           </details>
-          <p style="margin:8px 0 0;font-size:12px">Only this app joins the camera. Your phone
-            stays on 5G for everything else, so calls and messages keep working.</p>
+          <div class="btnRow" style="margin-top:8px">
+            <button class="sec" id="nRelease" style="flex:1">Disconnect from camera</button>
+          </div>
+          <p style="margin:8px 0 0;font-size:12px">Joining the camera uses the phone's WiFi
+            radio, and the camera's network has no internet, so your normal WiFi is unavailable
+            while you are connected. Mobile data keeps working. The app lets go automatically
+            when you leave it, or tap Disconnect above.</p>
         </div>
         <div class="btnRow" id="webConnect">
           <a class="btnLink" id="w1wifi"
@@ -960,6 +965,10 @@
       }
     };
 
+    $("nRelease").addEventListener("click", function () {
+      try { native.disconnectCamera(); } catch (e) {}
+    });
+
     $("nUseCurrent").addEventListener("click", function () {
       $("w1stat").className = "calibStat";
       $("w1stat").textContent = "Binding the app to the phone\u2019s current WiFi\u2026";
@@ -981,6 +990,11 @@
       } else if (state === "lost") {
         $("w1stat").className = "calibStat bad";
         $("w1stat").textContent = "Camera WiFi dropped. Tap Connect to camera again.";
+      } else if (state === "released") {
+        $("nWakeStat").className = "calibStat";
+        $("nWakeStat").textContent = "Disconnected. Your phone has its WiFi back.";
+        $("w1stat").className = "calibStat";
+        $("w1stat").textContent = "Not connected to the camera.";
       }
     };
     // ---- updates ----

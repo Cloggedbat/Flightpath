@@ -143,6 +143,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun networkInfo(): String = wifi.linkSummary()
 
+
         @JavascriptInterface
         fun wakeCamera() {
             runOnUiThread {
@@ -239,9 +240,14 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun isLiveOpen(): Boolean = live.isOpen
 
+        /** Let go of the camera so the phone gets its own WiFi back. */
         @JavascriptInterface
         fun disconnectCamera() {
-            runOnUiThread { wifi.disconnect() }
+            runOnUiThread {
+                wifi.disconnect()
+                ble.cancel()
+                js("window.__nativeWifi && window.__nativeWifi('released', '')")
+            }
         }
 
         @JavascriptInterface
@@ -326,6 +332,20 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         // Never leave a decoder running in the background.
         if (live.isOpen) live.hide("closed")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Give the phone back. Joining the camera takes over the WiFi radio,
+        // and the camera's network has no internet, so holding it while the
+        // app is not even on screen leaves the user with no WiFi and nothing
+        // working. The range session is always on screen (the app keeps the
+        // screen on), so this costs nothing there.
+        if (!isChangingConfigurations) {
+            wifi.disconnect()
+            ble.cancel()
+            js("window.__nativeWifi && window.__nativeWifi('released', '')")
+        }
     }
 
     override fun onDestroy() {

@@ -49,7 +49,20 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.33, versionCode 34.
+App version 0.1.34, versionCode 35.
+
+0.1.34 gives the phone back. AJ: "once the phone connects to the
+gopro we lose all cell service and wifi". Joining the camera takes over
+the phone's WiFi radio (one radio, and the camera's network has no
+internet), and the app only released it in onDestroy, so backgrounding
+the app left the phone parked on the camera's access point with nothing
+working. It now releases the camera network and the Bluetooth link in
+onStop, guarded against configuration changes, and there is a
+"Disconnect from camera" button. The range session is always on screen
+(FLAG_KEEP_SCREEN_ON), so nothing is lost there. The wizard says plainly
+that normal WiFi is unavailable while connected and that mobile data
+keeps working. NOTE: not yet confirmed whether AJ is also losing
+cellular, which this would not explain; ask if it persists.
 
 0.1.33: THE SHUTTER WORKS. 2026-09-22, 11:21, on the real camera:
 

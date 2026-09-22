@@ -680,6 +680,10 @@ class Worker:
                 self._note(f"probe failed: {type(exc).__name__}: {exc}")
 
             verdict_shutter = "not run"
+            # Only excuse the camera's HTTP noise if there actually was any.
+            # With the shutter over Bluetooth there is none, and saying "404s
+            # are normal" when nothing 404'd is just wrong.
+            saw_http_noise = False
             verdict_stream = "not run"
 
             # 2. Shutter, watched through the camera's state, not its reply.
@@ -719,8 +723,11 @@ class Worker:
                         self.client.start_recording()
                         self._note("shutter start: answered")
                     except Exception as exc:               # noqa: BLE001
-                        self._note("shutter start: no usable reply, which is normal on this "
-                                   f"HERO9 (it records anyway; the clip line is the proof): {exc}")
+                        saw_http_noise = True
+                        self._note("shutter start over WiFi failed, and on this HERO9 that "
+                                   "path is deprecated and does not record. The Bluetooth "
+                                   "shutter is the one that works: connect with the green "
+                                   f"button, which opens it. {exc}")
                     # Record a fixed 3 s of wall time, then stop. State is
                     # unreadable while the camera records, so it is not polled
                     # during the window: each read blocks to its timeout, and
@@ -739,6 +746,7 @@ class Worker:
                     t0 = time.monotonic()
                     confirmed, stop_err = self._stop_and_confirm()
                     if stop_err:
+                        saw_http_noise = True
                         self._note("shutter stop: camera refused or ignored the command while "
                                    f"closing the file, which is normal: {stop_err}")
                     self._note(f"after stop: {'idle confirmed' if confirmed else 'NOT confirmed'}"
@@ -819,9 +827,10 @@ class Worker:
             # The lines above print the camera's raw errors, and on this
             # HERO9 a working shutter produces several. Say plainly how it
             # went, so a passing test does not read as a failing one.
-            self._note(f"verdict: shutter {verdict_shutter}; stream {verdict_stream}. "
-                       "Lines above saying 404, timed out or refused during the "
-                       "recording are this camera's normal behaviour.")
+            self._note(f"verdict: shutter {verdict_shutter}; stream {verdict_stream}."
+                       + (" Lines above saying 404, timed out or refused during the "
+                          "recording are this camera's normal behaviour."
+                          if saw_http_noise else ""))
             self._note("camera test finished")
         except Exception as exc:                           # noqa: BLE001
             self._note(f"camera test crashed: {type(exc).__name__}: {exc}")

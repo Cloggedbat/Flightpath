@@ -1,5 +1,5 @@
 {
-  "versionCode": 34,
-  "versionName": "0.1.33",
-  "notes": "The shutter works: 79.8 MB clip instead of 26 KB. This build cleans up after that, so the camera test no longer tells you 404s and timeouts are normal when the shutter answered cleanly, and a WiFi shutter failure now says that path is deprecated and points you at the green button. Next: step 3 Calibrate, capture the reference frame."
+  "versionCode": 35,
+  "versionName": "0.1.34",
+  "notes": "Gives your phone back. Joining the camera uses the phone's only WiFi radio and the camera's network has no internet, so your normal WiFi is unavailable while connected. The app now lets go the moment you leave it, and there is a Disconnect from camera button. Mobile data should keep working throughout; if you are genuinely losing cell service too, tell me, because that is something else. Next: step 3 Calibrate, capture the reference frame."
 }
