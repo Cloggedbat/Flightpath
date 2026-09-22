@@ -90,6 +90,21 @@ def main() -> int:
         check("old clip on the card is baselined, not analysed",
               wait_for(lambda: "100GOPRO/GX010001.MP4" in w.seen, 5.0))
 
+        # The camera's firmware, not the API version. These are different
+        # numbers and the app reported the wrong one for weeks.
+        res = client.probe(timeout=3.0)
+        check("probe reads the camera's real firmware",
+              res.firmware == "HD9.01.70.00", res.firmware)
+        check("probe keeps the API version separate",
+              res.api_version == "2.0", res.api_version)
+        check("probe reads the model", res.model == "HERO9 Black", res.model)
+        summary = res.summary()
+        check("summary shows firmware and API version separately",
+              "camera firmware: HD9.01.70.00" in summary
+              and "API version: 2.0" in summary, summary)
+        check("a supported firmware is not flagged as too old",
+              "needs 01.70.00" not in summary, summary)
+
         # --- apply camera settings --------------------------------------
         phase[0] = "configure"
         r = w.configure_camera()

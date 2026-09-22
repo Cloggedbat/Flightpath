@@ -48,6 +48,7 @@ class FakeHero9:
                  sd_errors: int = 0, overheating: bool = False,
                  battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
                  preset_group: int = 1000, flatmode: int = 12,
+                 firmware: str = "HD9.01.70.00",
                  udp_datagrams: int = 500, udp_header: bytes = b""):
         self.write_speed_errors = write_speed_errors
         self.sd_errors = sd_errors
@@ -58,6 +59,8 @@ class FakeHero9:
         # camera that writes a tiny MP4 because it is timelapsing.
         self.preset_group = preset_group
         self.flatmode = flatmode
+        # GoPro's documented minimum for Open GoPro on a HERO9 is v01.70.00.
+        self.firmware = firmware
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
         # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
@@ -249,9 +252,13 @@ class FakeHero9:
             if path in ("/gopro/camera/keep_alive", "/gp/gpControl/info"):
                 return self._json({})
             if path == "/gopro/version":
-                return self._json({"version": "2.0",
-                                   "info": {"model_name": "HERO9 Black",
-                                            "firmware_version": "HD9.01.02.00.00"}})
+                # The API version, NOT the camera firmware. Kept separate on
+                # purpose: conflating them hid the real firmware for a while.
+                return self._json({"version": "2.0"})
+            if path == "/gopro/camera/info":
+                return self._json({"info": {"model_name": "HERO9 Black",
+                                            "firmware_version": self.firmware,
+                                            "serial_number": "C000000000000"}})
             if path in ("/gopro/media/list", "/gp/gpMediaList"):
                 return self._json(self._media(now))
             if path.startswith("/videos/DCIM/100GOPRO/"):

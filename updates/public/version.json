@@ -1,5 +1,5 @@
 {
-  "versionCode": 35,
-  "versionName": "0.1.34",
-  "notes": "Gives your phone back. Joining the camera uses the phone's only WiFi radio and the camera's network has no internet, so your normal WiFi is unavailable while connected. The app now lets go the moment you leave it, and there is a Disconnect from camera button. Mobile data should keep working throughout; if you are genuinely losing cell service too, tell me, because that is something else. Next: step 3 Calibrate, capture the reference frame."
+  "versionCode": 36,
+  "versionName": "0.1.35",
+  "notes": "From a proper read of GoPro's documentation. The camera test was showing the Open GoPro API version and calling it the firmware; it now reports the camera's real firmware and model, and warns if the firmware is older than the 01.70.00 that GoPro require on a HERO9. Live view start is also more careful, matching GoPro's own sequence. Run Test camera once to see the firmware, then go to step 3 Calibrate."
 }

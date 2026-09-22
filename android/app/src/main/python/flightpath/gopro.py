@@ -44,6 +44,10 @@ ENDPOINTS = {
     # port is right, it must never be sent.
     "keep_alive": ["/gopro/camera/keep_alive", "/gp/gpControl/status"],
     "version": ["/gopro/version", "/gp/gpControl/info"],
+    # The CAMERA's firmware, which is not the same thing as the API version
+    # above. GoPro requires v01.70.00 or later on a HERO9 for Open GoPro to
+    # work at all, so it is worth knowing which one is in front of us.
+    "camera_info": ["/gopro/camera/info", "/gp/gpControl/info"],
     # Live preview: the camera pushes an MPEG-TS/H.264 stream over UDP to
     # port 8554 of whichever client asked for it. Low resolution, aiming only.
     "stream_start": ["/gopro/camera/stream/start", "/gp/gpControl/execute?p1=gpStream&c1=restart"],
@@ -96,6 +100,10 @@ STATUS_PRESET = 97
 
 PRESET_GROUP_NAMES = {1000: "Video", 1001: "Photo", 1002: "Timelapse"}
 
+# A HERO9 firmware older than 01.70.00, which is GoPro's documented minimum
+# for Open GoPro on this model. Matches HD9.01.00.xx to HD9.01.69.xx.
+HERO9_FIRMWARE_LOW = re.compile(r"HD9\.01\.(0\d|[1-6]\d)\.", re.IGNORECASE)
+
 # Human names for what the camera reports, so the UI can say "1080p" not "9".
 RES_NAMES = {1: "4K", 4: "2.7K", 6: "2.7K 4:3", 7: "1440p", 9: "1080p",
              18: "4K 4:3", 24: "5K", 25: "5K 4:3", 27: "5.3K"}
@@ -138,7 +146,9 @@ class ProbeResult:
     host: str
     working: dict = field(default_factory=dict)
     failed: dict = field(default_factory=dict)
-    firmware: str = ""
+    firmware: str = ""          # the CAMERA's firmware, e.g. HD9.01.01.72.00
+    api_version: str = ""       # the Open GoPro API version, e.g. 2.0
+    model: str = ""
 
     def summary(self) -> str:
         if not self.reachable:
@@ -152,8 +162,17 @@ class ProbeResult:
                 "Accept the 'stay connected' prompt when it appears."
             )
         lines = [f"Camera answering at {self.host}."]
+        if self.model:
+            lines.append(f"  model: {self.model}")
         if self.firmware:
-            lines.append(f"  firmware: {self.firmware}")
+            # GoPro requires v01.70.00 or later on a HERO9. The camera's own
+            # string looks like HD9.01.70.00; older than that and parts of
+            # the API simply are not there.
+            lines.append(f"  camera firmware: {self.firmware}"
+                         + ("  (HERO9 needs 01.70.00 or later for Open GoPro)"
+                            if HERO9_FIRMWARE_LOW.search(self.firmware) else ""))
+        if self.api_version:
+            lines.append(f"  Open GoPro API version: {self.api_version}")
         for name, path in sorted(self.working.items()):
             lines.append(f"  ok      {name:<15} {path}")
         for name, why in sorted(self.failed.items()):
@@ -257,7 +276,18 @@ class GoProClient:
                 res.working[name] = ENDPOINTS[name][family] + "  (not probed; resolved on first use)"
             try:
                 v = self._get_json(res.working["version"])
-                res.firmware = str(v.get("version") or v.get("info", {}).get("firmware_version", ""))
+                res.api_version = str(v.get("version") or "")
+            except Exception:                              # noqa: BLE001
+                pass
+            try:
+                # /gopro/version is the Open GoPro API version ("2.0"), NOT
+                # the camera's firmware. Reporting the former as the latter
+                # hid the real firmware for this whole project.
+                info = self._get_json("/gopro/camera/info")
+                inner = info.get("info", info)
+                res.firmware = str(inner.get("firmware_version", "")
+                                   or inner.get("firmware", ""))
+                res.model = str(inner.get("model_name", "") or inner.get("model", ""))
             except Exception:                              # noqa: BLE001
                 pass
         return res
@@ -313,6 +343,11 @@ class GoProClient:
         The camera must be idle: starting the shutter kills the stream, so the
         worker stops it before every capture and the UI restarts it after.
         """
+        # GoPro's own PreviewStreamController stops any existing stream
+        # before starting one, rather than starting and coping with the
+        # refusal. Cheap, and it removes the usual cause of the 409.
+        self.stop_preview()
+        time.sleep(0.3)
         try:
             self._call("stream_start")
         except urllib.error.HTTPError as exc:

@@ -49,7 +49,24 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.34, versionCode 35.
+App version 0.1.35, versionCode 36.
+
+0.1.35 comes from reading the Open GoPro docs and SDK properly instead of
+dipping into them when stuck, which is what the whole project should have
+done on day one. Findings are in Camera facts. The code changes:
+
+Real bug: /gopro/version returns the Open GoPro API VERSION ("2.0"), and
+the probe printed it as "firmware: 2.0" for the entire project. The
+camera's actual firmware is at /gopro/camera/info. GoPro require
+v01.70.00 or later on a HERO9 for Open GoPro to work at all, and we had
+no idea what this camera was running. probe() now reads model, real
+firmware and API version separately, prints all three, and flags a HERO9
+firmware older than 01.70.00. The fake serves /gopro/camera/info and the
+harness checks all of it.
+
+start_preview() now stops any existing stream before starting one, which
+is what GoPro's own PreviewStreamController does, instead of starting and
+handling the 409 afterwards. The 409 retry stays as a backstop.
 
 0.1.34 gives the phone back. AJ: "once the phone connects to the
 gopro we lose all cell service and wifi". Joining the camera takes over
@@ -816,6 +833,31 @@ A different key means every user must uninstall.
   13 tick over BLE during a recording is NOT safe to assume; it has to be
   tested before anything depends on it. trigger() sleeping the window
   and confirming by clip stays the reliable design until then.
+- Live view, from GoPro's own code: their Python demo says "It can be
+  viewed in VLC at udp://@:8554" and otherwise uses OpenCV, and their
+  Android demo ships BOTH an ExoPlayer and a LibVLC player
+  (demos/kotlin/kmp_sdk/composeApp/src/androidMain/kotlin/ui/components/).
+  Their ExoPlayer one is a bare MediaItem.fromUri, so it is for the RTMP
+  live stream, not this UDP preview. Read that as: ExoPlayer over raw UDP
+  MPEG-TS, which is what LiveView.kt does, is the hard path, and LibVLC
+  is the escape hatch if TsUdpDataSource is not enough. Do not add
+  LibVLC before the range steps; it is a large dependency.
+- GoPro start the preview by stopping any existing stream AND the shutter
+  first, then enabling (their PreviewStreamController). We now stop the
+  stream first too. Their set_preview_stream also takes a port; 8554 is
+  just the default.
+- "Record while Streaming" is HERO12 and later. On a HERO9 the preview
+  must be stopped before recording, which is what the worker already
+  does. Documented, not just observed.
+- Every recording writes three files: the .mp4, a low resolution .lrv
+  proxy of the same footage, and a .thm thumbnail, all reachable over the
+  API. The .lrv is a possible route around the 10 to 20 s transfer for a
+  full 80 MB clip, at the cost of resolution. Untested, and accuracy
+  depends on resolution, so not now.
+- "Each camera can connect only to one BLE-enabled device at a time",
+  which is the documented reason Quik and FlightPath fight.
+- USB power alone runs the camera indefinitely without a battery, worth
+  knowing for a long range session.
 - Possible later adoptions over BLE, none tested: GET_CAMERA_STATUSES /
   REGISTER_ALL_STATUSES (CQ_QUERY), LOAD_PRESET_GROUP and LOAD_PRESET
   (set Video mode), get_hardware_info, set_date_time, tag_hilight,
