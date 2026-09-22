@@ -1,5 +1,5 @@
 {
-  "versionCode": 36,
-  "versionName": "0.1.35",
-  "notes": "From a proper read of GoPro's documentation. The camera test was showing the Open GoPro API version and calling it the firmware; it now reports the camera's real firmware and model, and warns if the firmware is older than the 01.70.00 that GoPro require on a HERO9. Live view start is also more careful, matching GoPro's own sequence. Run Test camera once to see the firmware, then go to step 3 Calibrate."
+  "versionCode": 37,
+  "versionName": "0.1.36",
+  "notes": "Fixes the firmware line, which 0.1.35 never actually printed: your camera answers the older info endpoint, not the modern one, and the app was asking the wrong one. Test camera will now show the camera model and its real firmware. Then please go to step 3 Calibrate and capture the reference frame; the shutter has now recorded three clean 80 MB clips in a row and calibrate is the one part of the chain that has never run."
 }

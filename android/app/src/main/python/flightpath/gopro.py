@@ -283,7 +283,12 @@ class GoProClient:
                 # /gopro/version is the Open GoPro API version ("2.0"), NOT
                 # the camera's firmware. Reporting the former as the latter
                 # hid the real firmware for this whole project.
-                info = self._get_json("/gopro/camera/info")
+                #
+                # Use the RESOLVED endpoint, not a hardcoded one: this HERO9
+                # 404s /gopro/camera/info exactly as it 404s the Open GoPro
+                # shutter, and answers the legacy /gp/gpControl/info instead.
+                raw = self._call("camera_info")
+                info = json.loads(raw.decode("utf-8", "replace") or "{}")
                 inner = info.get("info", info)
                 res.firmware = str(inner.get("firmware_version", "")
                                    or inner.get("firmware", ""))

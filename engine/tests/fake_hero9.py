@@ -49,6 +49,7 @@ class FakeHero9:
                  battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
                  preset_group: int = 1000, flatmode: int = 12,
                  firmware: str = "HD9.01.70.00",
+                 open_gopro_camera_info: bool = False,
                  udp_datagrams: int = 500, udp_header: bytes = b""):
         self.write_speed_errors = write_speed_errors
         self.sd_errors = sd_errors
@@ -61,6 +62,9 @@ class FakeHero9:
         self.flatmode = flatmode
         # GoPro's documented minimum for Open GoPro on a HERO9 is v01.70.00.
         self.firmware = firmware
+        # The real camera 404s /gopro/camera/info and answers the legacy
+        # /gp/gpControl/info, so that is the default here too.
+        self.open_gopro_camera_info = open_gopro_camera_info
         with open(clip_path, "rb") as fh:
             self.clip_bytes = fh.read()
         # Measured 2026-09-18: the camera closed a 3 s recording at 27,639
@@ -156,6 +160,12 @@ class FakeHero9:
     def _json(self, obj, status: int = 200):
         return status, json.dumps(obj).encode(), "application/json", {}
 
+    def _camera_info(self):
+        return self._json({"info": {"model_name": "HERO9 Black",
+                                    "model_number": 55,
+                                    "firmware_version": self.firmware,
+                                    "serial_number": "C000000000000"}})
+
     def _state(self) -> dict:
         """Status ids as GoPro documents them: 8 busy, 10 encoding, 13 the
         duration so far, 111 card write speed errors, 6 overheating. Busy
@@ -249,16 +259,20 @@ class FakeHero9:
                 return self._json({}, 404)            # HERO10 and later only
             if path in ("/gopro/camera/state", "/gp/gpControl/status"):
                 return self._json(self._state())
-            if path in ("/gopro/camera/keep_alive", "/gp/gpControl/info"):
+            if path == "/gopro/camera/keep_alive":
                 return self._json({})
             if path == "/gopro/version":
                 # The API version, NOT the camera firmware. Kept separate on
                 # purpose: conflating them hid the real firmware for a while.
                 return self._json({"version": "2.0"})
             if path == "/gopro/camera/info":
-                return self._json({"info": {"model_name": "HERO9 Black",
-                                            "firmware_version": self.firmware,
-                                            "serial_number": "C000000000000"}})
+                # This HERO9 404s the Open GoPro info endpoint, exactly as it
+                # 404s the Open GoPro shutter. Only the legacy one answers.
+                if not self.open_gopro_camera_info:
+                    return self._json({}, 404)
+                return self._camera_info()
+            if path == "/gp/gpControl/info":
+                return self._camera_info()
             if path in ("/gopro/media/list", "/gp/gpMediaList"):
                 return self._json(self._media(now))
             if path.startswith("/videos/DCIM/100GOPRO/"):

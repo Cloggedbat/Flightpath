@@ -49,7 +49,22 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.35, versionCode 36.
+App version 0.1.36, versionCode 37.
+
+0.1.36 fixes the firmware read that 0.1.35 got wrong. The 14:20 log
+(2026-09-22) shows "ok camera_info /gp/gpControl/info" and then no
+firmware line at all: this HERO9 404s /gopro/camera/info exactly as it
+404s the Open GoPro shutter, and only the legacy endpoint answers.
+0.1.35 resolved the endpoint correctly and then ignored it, calling the
+hardcoded modern URL, so the read always failed. It now uses
+_call("camera_info"), which is the whole point of the resolver. The fake
+404s /gopro/camera/info by default (open_gopro_camera_info=False) and
+serves /gp/gpControl/info, so this cannot regress unnoticed.
+
+Pattern worth naming, because it has now bitten three times: on this
+camera, anything under /gopro/ may 404 while the legacy /gp/gpControl
+equivalent works. The shutter, and now camera info. Never hardcode a
+/gopro/ path; always go through _call() with a legacy fallback.
 
 0.1.35 comes from reading the Open GoPro docs and SDK properly instead of
 dipping into them when stuck, which is what the whole project should have
