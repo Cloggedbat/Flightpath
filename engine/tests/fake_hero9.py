@@ -48,7 +48,7 @@ class FakeHero9:
                  sd_errors: int = 0, overheating: bool = False,
                  battery_pct: int = 82, sd_remaining_kb: int = 52_428_800,
                  preset_group: int = 1000, flatmode: int = 12,
-                 firmware: str = "HD9.01.70.00",
+                 firmware: str = "HD9.01.01.72.00",
                  open_gopro_camera_info: bool = False,
                  udp_datagrams: int = 500, udp_header: bytes = b""):
         self.write_speed_errors = write_speed_errors

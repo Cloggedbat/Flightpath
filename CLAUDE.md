@@ -49,7 +49,19 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.36, versionCode 37.
+App version 0.1.37, versionCode 38.
+
+0.1.37 corrects a false alarm 0.1.36 raised about AJ's camera. The
+firmware reads HD9.01.01.72.00 and the app warned it was older than the
+01.70.00 Open GoPro needs. It is not: GoPro put the version in the LAST
+THREE components of that string, so HD9.01. then 01.72.00, which is
+v1.72 and newer than the minimum. The old check was a regex looking at
+the wrong position. firmware_too_old() now parses the trailing three
+numbers and compares them properly, and returns False whenever it cannot
+parse, because a wrong warning is worse than no warning. AJ's exact
+version is a harness case, along with the boundary and an older one.
+
+THE CAMERA'S FIRMWARE IS FINE. Do not tell AJ to update it.
 
 0.1.36 fixes the firmware read that 0.1.35 got wrong. The 14:20 log
 (2026-09-22) shows "ok camera_info /gp/gpControl/info" and then no
@@ -766,6 +778,9 @@ A different key means every user must uninstall.
   (overheating) and 70 (battery) via GoProClient.health(). Still not
   known whether the camera's own shutter button records normally; the
   camera test's "latest clip on the card" line answers that.
+- This camera is a HERO9 Black on firmware HD9.01.01.72.00, which is
+  v1.72 and above GoPro's v01.70.00 minimum for Open GoPro. The version
+  lives in the LAST THREE components of that string, not the first ones.
 - Camera status ids that matter: 6 overheating, 8 BUSY, 10 ENCODING, 13
   encoding duration in seconds, 54 card free KB, 70 battery percent, 111
   card write speed errors, 112 card errors. 8 is busy, NOT recording; it

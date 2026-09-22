@@ -1,5 +1,5 @@
 {
-  "versionCode": 37,
-  "versionName": "0.1.36",
-  "notes": "Fixes the firmware line, which 0.1.35 never actually printed: your camera answers the older info endpoint, not the modern one, and the app was asking the wrong one. Test camera will now show the camera model and its real firmware. Then please go to step 3 Calibrate and capture the reference frame; the shutter has now recorded three clean 80 MB clips in a row and calibrate is the one part of the chain that has never run."
+  "versionCode": 38,
+  "versionName": "0.1.37",
+  "notes": "Corrects a false alarm: your camera's firmware is fine. HD9.01.01.72.00 is version 1.72, which is newer than the 1.70 GoPro require, and the app was reading the wrong part of that number. Do not update the camera. Now please go to step 3 Calibrate and capture the reference frame; the shutter has recorded four clean 80 MB clips in a row and calibrate is the last part of the chain that has never run."
 }

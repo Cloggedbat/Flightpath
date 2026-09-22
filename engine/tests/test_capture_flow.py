@@ -94,16 +94,27 @@ def main() -> int:
         # numbers and the app reported the wrong one for weeks.
         res = client.probe(timeout=3.0)
         check("probe reads the camera's real firmware",
-              res.firmware == "HD9.01.70.00", res.firmware)
+              res.firmware == "HD9.01.01.72.00", res.firmware)
         check("probe keeps the API version separate",
               res.api_version == "2.0", res.api_version)
         check("probe reads the model", res.model == "HERO9 Black", res.model)
         summary = res.summary()
         check("summary shows firmware and API version separately",
-              "camera firmware: HD9.01.70.00" in summary
+              "camera firmware: HD9.01.01.72.00" in summary
               and "API version: 2.0" in summary, summary)
         check("a supported firmware is not flagged as too old",
-              "needs 01.70.00" not in summary, summary)
+              "OLDER than" not in summary, summary)
+        # AJ's actual camera. An earlier regex read the wrong position in
+        # the version string and told him a current camera was out of date.
+        too_old = gopro.firmware_too_old
+        check("HD9.01.01.72.00 (AJ's camera) is NOT too old",
+              too_old("HD9.01.01.72.00") is False)
+        check("the documented minimum itself passes",
+              too_old("HD9.01.01.70.00") is False)
+        check("a genuinely older firmware is caught",
+              too_old("HD9.01.01.50.00") is True)
+        check("an unparseable version never warns",
+              too_old("") is False and too_old("weird") is False)
 
         # --- apply camera settings --------------------------------------
         phase[0] = "configure"

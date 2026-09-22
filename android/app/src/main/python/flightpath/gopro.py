@@ -100,9 +100,27 @@ STATUS_PRESET = 97
 
 PRESET_GROUP_NAMES = {1000: "Video", 1001: "Photo", 1002: "Timelapse"}
 
-# A HERO9 firmware older than 01.70.00, which is GoPro's documented minimum
-# for Open GoPro on this model. Matches HD9.01.00.xx to HD9.01.69.xx.
-HERO9_FIRMWARE_LOW = re.compile(r"HD9\.01\.(0\d|[1-6]\d)\.", re.IGNORECASE)
+# GoPro's documented minimum for Open GoPro on a HERO9.
+HERO9_MIN_FIRMWARE = (1, 70, 0)
+
+
+def firmware_too_old(version: str, minimum=HERO9_MIN_FIRMWARE) -> bool:
+    """Is this camera firmware below `minimum`?
+
+    The camera reports something like "HD9.01.01.72.00", where the VERSION
+    is the last three numbers: 01.72.00, which is v1.72 and newer than the
+    v01.70.00 minimum. An earlier attempt pattern-matched the wrong
+    position and told AJ a current camera was out of date, so this parses
+    properly and returns False whenever it cannot tell.
+    """
+    parts = [p for p in str(version).split(".") if p.isdigit()]
+    if len(parts) < 3:
+        return False                                   # unrecognised, do not warn
+    try:
+        got = tuple(int(p) for p in parts[-3:])
+    except ValueError:
+        return False
+    return got < tuple(minimum)
 
 # Human names for what the camera reports, so the UI can say "1080p" not "9".
 RES_NAMES = {1: "4K", 4: "2.7K", 6: "2.7K 4:3", 7: "1440p", 9: "1080p",
@@ -169,8 +187,8 @@ class ProbeResult:
             # string looks like HD9.01.70.00; older than that and parts of
             # the API simply are not there.
             lines.append(f"  camera firmware: {self.firmware}"
-                         + ("  (HERO9 needs 01.70.00 or later for Open GoPro)"
-                            if HERO9_FIRMWARE_LOW.search(self.firmware) else ""))
+                         + ("  (OLDER than the 01.70.00 Open GoPro needs on a HERO9)"
+                            if firmware_too_old(self.firmware) else ""))
         if self.api_version:
             lines.append(f"  Open GoPro API version: {self.api_version}")
         for name, path in sorted(self.working.items()):
