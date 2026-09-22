@@ -636,6 +636,12 @@ camera on the WiFi menu; it says to press Mode and return to the shooting
 screen, since a camera in a menu neither records nor previews.
 
 Proven:
+- THE WHOLE CHAIN WORKS. 2026-09-22: a calibration capture produced a
+  real reference frame on the phone, with the tap-to-calibrate overlay
+  on it. Bluetooth wake, WiFi join, process bind, camera settings,
+  Bluetooth shutter, media list, download, MediaCodec decode, JPEG, and
+  on screen. The frame is grayscale by design (ClipDecoder returns the
+  luma plane, which is all the tracker uses); that is not a fault.
 - The shutter works over Bluetooth: 79.8 MB clip, stop confirmed in 1 s,
   recording clock visible on the camera (2026-09-22). The WiFi shutter
   is deprecated on this model and records NOTHING; do not use it.
@@ -665,14 +671,18 @@ Proven:
   status but 404s on both media list paths.
 
 NOT proven (in order of importance):
-1. A calibration capture end to end in the wizard: shutter, download,
-   decode, reference frame on screen. Every piece is now proven
-   separately, so this should just work.
-2. Live view. The stream format is understood (Camera facts) and
-   TsUdpDataSource.kt strips the header; the phone has not yet shown a
-   frame of it.
-3. Any real golf ball. Every number ever produced is from a synthetic clip.
-4. Rolling-shutter readout time of the HERO9 (drop test measures it).
+1. Any real golf ball. Every number ever produced is from a synthetic
+   clip. The capture chain is proven, so this is now only a matter of
+   setting the camera up side-on, calibrating against a club and hitting
+   one. This is the whole point of the project.
+2. Rolling-shutter readout time of the HERO9 (the drop test measures it).
+3. Live view. Still black: "Waiting for the camera's picture" on
+   2026-09-22, with TsUdpDataSource in place. The stream itself is fine
+   (500 datagrams, MPEG-TS found, every camera test). This is an Android
+   decode problem, and GoPro's own tooling uses VLC rather than
+   ExoPlayer for this stream, so LibVLC is the likely fix. NOT required
+   for calibration, the drop test or measuring a shot: it is only for
+   aiming. Do not let it block the range steps.
 
 ## The active plan
 
@@ -684,6 +694,9 @@ Five steps, about 2 hours total, no new features until they are done:
 2b. DONE 2026-09-22: the shutter records a real 79.8 MB clip, over
    Bluetooth. Always connect with the green button; that is what opens
    the Bluetooth link the shutter needs.
+2c. DONE 2026-09-22: a calibration capture puts a real reference frame on
+   screen. The wizard's tap-to-calibrate then gives px/m from a club of
+   known length, which is enough to measure a shot without the drop test.
 3. `dropcal`: drop a ball past the lens, get px/m and readout time (30 min).
 4. Hit ONE 7-iron outdoors. Expect roughly 110 to 125 mph at 17 to 21 degrees.
 5. Hit twenty. Check consistency, not accuracy.
