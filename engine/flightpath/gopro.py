@@ -334,7 +334,14 @@ class GoProClient:
             return None
         try:
             if not bool(ble.isReady()):
-                return None
+                # The link drops between uses. Falling back to the WiFi
+                # shutter here is worse than useless on this camera: it does
+                # nothing, the camera does not even beep, and the user sees a
+                # timeout with no clue why. So rebuild the link instead.
+                if not bool(ble.reconnect()):
+                    return ("the Bluetooth link to the camera has dropped and could not "
+                            "be rebuilt. Tap \"Turn on camera WiFi and connect\" again. "
+                            "The shutter only works over Bluetooth on this camera.")
             return str(ble.shutterStart() if start else ble.shutterStop())
         except Exception as exc:                           # noqa: BLE001
             return f"{type(exc).__name__}: {exc}"

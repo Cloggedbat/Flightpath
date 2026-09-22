@@ -49,7 +49,32 @@ and run `./sync-engine.sh` (Git Bash on Windows).
 
 ## Current state (2026-09-17)
 
-App version 0.1.37, versionCode 38.
+App version 0.1.38, versionCode 39.
+
+0.1.38 fixes the calibration capture. AJ on 0.1.36: "when i try to
+capture it gives me an error timed out, the camera also did not beep
+like it does on the tests". No beep is the whole diagnosis: the camera
+beeps on every Bluetooth shutter, so the shutter never fired. The GATT
+link had dropped between Test camera and Calibrate, isReady() correctly
+said so, and _ble_shutter then returned None, which made GoProClient
+fall back to the WiFi shutter. On this camera that does nothing at all,
+so the user got a timeout and no beep and no clue.
+
+Two changes. CameraBle.reconnect() rebuilds the command link without
+redoing the whole wake: it reconnects to the remembered device,
+discovers services, subscribes to the response characteristic and
+returns, blocking, with readyLatch separating that path from the wake
+state machine. And _ble_shutter() calls it when the link is down instead
+of falling back; if it cannot be rebuilt it returns a plain message
+saying to tap the green button again, because falling back to a shutter
+that cannot work is worse than failing. trigger() now aborts on a
+Bluetooth failure rather than recording nothing and hunting for a clip.
+
+Harness: a dropped link is reconnected and no HTTP shutter is ever sent,
+and an unrecoverable link raises with the instruction. 68 checks.
+
+Lesson: never fall back to a path known not to work on this hardware.
+The fallback existed for other cameras and it cost an evening here.
 
 0.1.37 corrects a false alarm 0.1.36 raised about AJ's camera. The
 firmware reads HD9.01.01.72.00 and the app warned it was older than the

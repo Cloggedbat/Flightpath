@@ -78,6 +78,9 @@ class CameraBle(private val context: Context) {
     private var password = ""
 
     // Replies to a command we sent and are waiting on, by command id.
+    private var lastDevice: BluetoothDevice? = null
+    /** Set while reconnect() is waiting for the link to become usable. */
+    private val readyLatch = AtomicReference<CountDownLatch?>(null)
     private val cmdLatch = AtomicReference<CountDownLatch?>(null)
     private val cmdId = AtomicInteger(-1)
     private val cmdStatus = AtomicInteger(-1)
@@ -124,6 +127,10 @@ class CameraBle(private val context: Context) {
                 fail("Could not read the camera's Bluetooth services (status $status).")
                 return
             }
+            if (readyLatch.get() != null) {
+                subscribeOnly(g)               // reconnect: commands only
+                return
+            }
             if (!readChar(g, WIFI_SSID)) {
                 fail("This device does not look like a GoPro: no WiFi name characteristic.")
             }
@@ -144,6 +151,10 @@ class CameraBle(private val context: Context) {
         override fun onDescriptorWrite(
             g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int
         ) {
+            readyLatch.get()?.let {
+                it.countDown()                 // reconnect finished, link usable
+                return
+            }
             // Subscribed to responses. Now ask for the WiFi.
             report("Asking the camera to switch its WiFi on.")
             if (!writeCommand(g)) fail("Could not send the WiFi command to the camera.")
@@ -218,7 +229,65 @@ class CameraBle(private val context: Context) {
     @SuppressLint("MissingPermission")
     private fun connect(device: BluetoothDevice) {
         closeGatt()
+        lastDevice = device
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+    }
+
+    /**
+     * Bring the command link back without redoing the whole wake.
+     *
+     * A GATT link does not last forever: the camera or Android can drop it
+     * between one use and the next. When that happened, the shutter fell
+     * back to the WiFi path, which does nothing on this camera, so the user
+     * saw a timeout and heard no beep. Reconnecting is cheap, so do it
+     * rather than fail. Blocking, because the engine's worker thread wants
+     * an answer before it fires the shutter.
+     */
+    @SuppressLint("MissingPermission")
+    fun reconnect(timeoutMs: Long = 12_000): Boolean {
+        if (isReady()) return true
+        val dev = lastDevice ?: return false
+        val latch = CountDownLatch(1)
+        readyLatch.set(latch)
+        // Stop the wake state machine reporting anything for this pass.
+        finished = true
+        main.post {
+            closeGatt()
+            gatt = dev.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        }
+        val signalled = try {
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            false
+        } finally {
+            readyLatch.set(null)
+        }
+        return signalled && isReady()
+    }
+
+    /** Subscribe to command responses and nothing else: a reconnect does not
+     *  need the WiFi credentials again. */
+    @SuppressLint("MissingPermission")
+    private fun subscribeOnly(g: BluetoothGatt) {
+        val rsp = findChar(g, COMMAND_RSP)
+        if (rsp == null) {
+            readyLatch.get()?.countDown()
+            return
+        }
+        g.setCharacteristicNotification(rsp, true)
+        val cccd = rsp.getDescriptor(CCCD)
+        if (cccd == null) {
+            readyLatch.get()?.countDown()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        } else {
+            @Suppress("DEPRECATION")
+            cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            @Suppress("DEPRECATION")
+            g.writeDescriptor(cccd)
+        }
     }
 
     @SuppressLint("MissingPermission")

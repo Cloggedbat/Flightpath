@@ -218,13 +218,21 @@ class FakeBle:
     camera exactly as the real shutter command does: 03:01:01:01 on,
     03:01:01:00 off."""
 
-    def __init__(self, cam, ready=True, error=""):
+    def __init__(self, cam, ready=True, error="", can_reconnect=True):
         self.cam = cam
         self.ready = ready
         self.error = error
+        # A dropped GATT link is normal; whether it can be rebuilt is not
+        # guaranteed, and the two cases must behave differently.
+        self.can_reconnect = can_reconnect
         self.calls: list[str] = []
 
     def isReady(self):                                     # noqa: N802 (Java name)
+        return self.ready
+
+    def reconnect(self):                                   # noqa: N802
+        self.calls.append("reconnect")
+        self.ready = self.can_reconnect
         return self.ready
 
     def shutterStart(self):                                # noqa: N802
@@ -284,15 +292,29 @@ def ble_shutter_scenario(clip: str) -> None:
         except gopro.GoProError as exc:
             check("ble: a refusal raises and names the reason", "refused" in str(exc), str(exc))
 
-        # No link: fall back to HTTP exactly as before.
-        client.ble = FakeBle(cam, ready=False)
+        # A dropped link is rebuilt rather than silently falling back to the
+        # WiFi shutter, which on this camera does nothing at all: the user
+        # saw only a timeout and the camera never even beeped.
+        dropped = FakeBle(cam, ready=False)
+        client.ble = dropped
         n0 = len([r for r in cam.requests if "shutter" in r])
+        client.start_recording()
+        check("ble: a dropped link is reconnected, not abandoned",
+              dropped.calls[:2] == ["reconnect", "start"], str(dropped.calls))
+        check("ble: still no HTTP shutter after a reconnect",
+              len([r for r in cam.requests if "shutter" in r]) == n0)
+        client.stop_recording()
+
+        # If it cannot be rebuilt, say so plainly instead of timing out on a
+        # shutter that was never going to work.
+        gone = FakeBle(cam, ready=False, can_reconnect=False)
+        client.ble = gone
         try:
             client.start_recording()
-        except Exception:                                  # noqa: BLE001
-            pass
-        check("ble: with no link it falls back to HTTP",
-              len([r for r in cam.requests if "shutter" in r]) > n0)
+            check("ble: an unrecoverable link raises", False, "no exception")
+        except gopro.GoProError as exc:
+            check("ble: an unrecoverable link says to reconnect",
+                  "Bluetooth link" in str(exc) and "connect" in str(exc), str(exc))
     finally:
         w.stop()
         cam.stop()

@@ -410,9 +410,12 @@ class Worker:
                 self.client.start_recording()
             except Exception as exc:                       # noqa: BLE001
                 if "bluetooth" in str(exc).lower():
+                    # Not noise: the shutter only works over Bluetooth on
+                    # this camera, so this means nothing was recorded.
                     self._note(f"shutter start: {exc}")
                     with self._lock:
                         self.last_error = f"shutter start: {exc}"
+                    return f"shutter: {exc}"
 
             # Record the full window. Do NOT poll state to abort early: state
             # is unreadable during recording, so an early read would be a false

@@ -1,5 +1,5 @@
 {
-  "versionCode": 38,
-  "versionName": "0.1.37",
-  "notes": "Corrects a false alarm: your camera's firmware is fine. HD9.01.01.72.00 is version 1.72, which is newer than the 1.70 GoPro require, and the app was reading the wrong part of that number. Do not update the camera. Now please go to step 3 Calibrate and capture the reference frame; the shutter has recorded four clean 80 MB clips in a row and calibrate is the last part of the chain that has never run."
+  "versionCode": 39,
+  "versionName": "0.1.38",
+  "notes": "Fixes Calibrate timing out with no beep from the camera. The Bluetooth link had quietly dropped between Test camera and Calibrate, and the app fell back to the WiFi shutter, which does nothing on this camera. It now rebuilds the Bluetooth link automatically when it is needed, and if it cannot, it says so instead of timing out. Update, connect with the green button, then go to 3 Calibrate and capture the reference frame."
 }
